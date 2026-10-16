@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: Fire App Store Connect backend
+  version: 0.1.0
+  description: >-
+    Reads app titles using a locally held Apple key or a client-signed JWT.
+    Does not accept private key uploads. The backend access token is separate
+    from the Apple JWT. No credentials are returned in responses.
+servers:
+  - url: http://127.0.0.1:8080
+security:
+  - backendToken: []
+paths:
+  /healthz:
+    get:
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Process is running; does not test Apple connectivity.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+  /v1/apps/{appID}/title:
+    get:
+      operationId: getAppTitle
+      description: >-
+        Without query parameters, returns apps.attributes.name and primaryLocale.
+        To read localized metadata, supply both appInfoId and locale. The app info
+        must belong to appID. Select its ID using Apple's list-app-infos endpoint;
+        the backend never guesses draft versus published metadata. A missing
+        localization returns 404 without falling back to another language.
+        In relay mode X-App-Store-Token is required; Apple validates it upstream.
+        No automatic retries are made.
+      parameters:
+        - name: appID
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
+        - name: appInfoId
+          in: query
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
+        - name: locale
+          in: query
+          schema: {type: string, pattern: '^[A-Za-z0-9-]+$', maxLength: 35}
+        - name: X-App-Store-Token
+          in: header
+          description: Raw Apple JWT, required only in relay mode. Never a .p8 key.
+          schema: {type: string}
+      responses:
+        '200':
+          description: Title from App Store Connect; not a guarantee of public storefront availability.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [appId, title, locale, source]
+                properties:
+                  appId: {type: string}
+                  appInfoId: {type: string}
+                  title: {type: string}
+                  locale: {type: string}
+                  source: {type: string, enum: [app, appInfoLocalization]}
+              example: {appId: '123456789', title: My App, locale: en-US, source: app}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '429':
+          description: Apple rate limit; wait before retrying.
+          headers:
+            Retry-After: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    backendToken:
+      type: http
+      scheme: bearer
+      description: FIRE_API_TOKEN, separate from the Apple token.
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+  responses:
+    Error:
+      description: >-
+        400 invalid input; 401 backend authentication or Apple JWT rejected;
+        403 Apple permission or browser origin denied; 404 app, app-info association or locale
+        missing; 500 internal or signing error; 502 upstream failure or malformed response; 504 Apple timeout.
+        Error codes distinguish backend authentication from Apple authentication.
+        Apple response bodies and credentials are not exposed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}

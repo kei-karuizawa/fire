@@ -1,0 +1,5 @@
+simulation: apple-app-titles
+routing: path
+mocks:
+  - routeKey: apple
+    path: ../mocks/apple/config.yaml

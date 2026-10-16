@@ -1,0 +1,9 @@
+*.p8
+.env
+.env.*
+!.env.example
+bin/
+.cache/
+*.ndjson
+*.log
+**/postman/.dependencies/
