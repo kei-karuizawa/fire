@@ -13,7 +13,7 @@ fire/
 │   └── macos/                   # macOS client
 ├── service/                     # Go backend
 │   ├── cmd/fire/                # HTTP service entry point
-│   ├── internal/httpapi/        # Routes and backend authentication
+│   ├── internal/httpapi/        # Routes and the browser UI host
 │   ├── app-store-connect/         # Apple API client and local JWT signer
 │   ├── api/openapi.yaml         # HTTP contract for all clients
 │   ├── integration/             # Tests against a running backend
@@ -25,22 +25,23 @@ fire/
 └── Makefile                     # Root backend development commands
 ```
 
-The Go backend is implemented. The `web`, `app/ios`, `app/macos` and `cli`
-directories contain scope notes; their clients have not been implemented.
+The Go backend and the browser client in `web` are implemented. The
+`app/ios`, `app/macos` and `cli` directories contain scope notes; those
+clients have not been implemented.
 The backend's `service/cmd/fire` starts the HTTP service and is separate from
 the future user-facing CLI in `cli`.
 
-## Start the backend
+## Start
 
-Requires Go 1.22+. Export configuration using
-[service/.env.example](service/.env.example); environment files are not
-loaded automatically. From this repository root:
+Requires Go 1.22+. From this repository root:
 
 ```sh
 make run
 ```
 
-For local-key and self-hosted relay setup, see the
+Open http://127.0.0.1:8080. A `.p8` can be kept on the server, in the browser,
+or later in the iOS Keychain. The server never accepts an uploaded private key.
+See [web/README.md](web/README.md). Optional server-side signing for curl is in the
 [backend guide](service/README.md).
 
 ## Build and verify
@@ -76,6 +77,6 @@ The root is a Go workspace, not a Go module. Inside `service`, the usual
 - `cli` owns user-facing commands and command-line configuration.
 
 All HTTP clients use [service/api/openapi.yaml](service/api/openapi.yaml).
-A remote backend cannot read a `.p8` path on the user's device. To keep the
-key there, clients must sign locally and send a short-lived Apple JWT in
-relay mode. Client signing and key-import interfaces are not implemented yet.
+A `.p8` stays where its client keeps it: the server key file, the browser, or
+the iOS Keychain. Clients that hold the key send a five-minute Apple JWT.
+Fire never receives an uploaded private key. See [web/README.md](web/README.md).

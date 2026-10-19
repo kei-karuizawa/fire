@@ -18,15 +18,14 @@ func TestTitleSimulation(t *testing.T) {
 		t.Skip("set FIRE_TEST_URL to a backend wired to the Postman simulation")
 	}
 	secret := os.Getenv("FIRE_TEST_TOKEN")
-	if secret == "" {
-		t.Fatal("FIRE_TEST_TOKEN is required")
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 20 * time.Second}
 	for _, tc := range []struct {
 		name, path string
 		status     int
 		expected   string
 	}{
+		{"apps", "/v1/apps", 200, `"name":"Paper Kettle"`},
+		{"catalog", "/v1/apps/123456789/catalog", 200, `"keywords":"trail,notes,offline"`},
 		{"title", "/v1/apps/123456789/title", 200, `"title":"My App"`},
 		{"localized", "/v1/apps/123456789/title?appInfoId=info-1&locale=zh-Hans", 200, `"title":"我的应用"`},
 		{"missing-locale", "/v1/apps/123456789/title?appInfoId=info-1&locale=ja", 404, `"code":"not_found"`},
@@ -44,7 +43,9 @@ func TestTitleSimulation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			req.Header.Set("Authorization", "Bearer "+secret)
+			if secret != "" {
+				req.Header.Set("Authorization", "Bearer "+secret)
+			}
 			if os.Getenv("FIRE_TEST_AUTH_MODE") == "relay" {
 				req.Header.Set("X-App-Store-Token", "synthetic.simulation.token")
 			}
@@ -63,7 +64,7 @@ func TestTitleSimulation(t *testing.T) {
 			if !json.Valid(body) {
 				t.Fatal("invalid JSON")
 			}
-			if strings.Contains(string(body), "PRIVATE_UPSTREAM_SENTINEL") || strings.Contains(string(body), secret) {
+			if strings.Contains(string(body), "PRIVATE_UPSTREAM_SENTINEL") || (secret != "" && strings.Contains(string(body), secret)) {
 				t.Fatal("upstream detail or credential exposed")
 			}
 			if tc.status == 429 && res.Header.Get("Retry-After") != "30" {

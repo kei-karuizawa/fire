@@ -48,8 +48,12 @@ func NewClient(baseURL string) (*Client, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1")) {
 		return nil, errors.New("Apple base URL requires HTTPS except on loopback")
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 64
+	transport.MaxConnsPerHost = 64
 	return &Client{strings.TrimRight(baseURL, "/"), &http.Client{
 		Timeout:       10 * time.Second,
+		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
@@ -147,6 +151,10 @@ func (c *Client) get(ctx context.Context, token, path string, query url.Values, 
 	if len(query) != 0 {
 		endpoint += "?" + query.Encode()
 	}
+	return c.do(ctx, token, endpoint, target, 2<<20)
+}
+
+func (c *Client) do(ctx context.Context, token, endpoint string, target any, maxBody int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return malformed()
@@ -176,9 +184,8 @@ func (c *Client) get(ctx context.Context, token, path string, query url.Values, 
 		}
 		return &Error{Status: status, Code: code, Message: message, RetryAfter: resp.Header.Get("Retry-After")}
 	}
-	const maxBody = 2 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	if err != nil || len(body) > maxBody {
+	if err != nil || int64(len(body)) > maxBody {
 		return malformed()
 	}
 	if err := json.Unmarshal(body, target); err != nil {

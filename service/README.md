@@ -5,8 +5,8 @@ client and local `.p8` signer live in
 [app-store-connect](app-store-connect). Go 1.22+;
 no third-party Go dependencies.
 
-This is the first backend feature for CLI, web, desktop and mobile clients.
-Those frontends are not implemented yet. See the [repository guide](../README.md)
+The web client is in `web`. The CLI, desktop, and mobile clients are not
+implemented yet. See the [repository guide](../README.md)
 for their directories. All commands below run from `service`, unless stated
 otherwise. From the repository root, first run `cd service`.
 
@@ -18,7 +18,6 @@ There is no private-key upload endpoint. Keep the key outside this repository;
 `.p8` and `.env` files are ignored by Git.
 
 ```sh
-export FIRE_API_TOKEN="$(openssl rand -hex 32)"
 export ASC_AUTH_MODE=local
 export ASC_KEY_TYPE=team
 export ASC_KEY_ID=YOUR_KEY_ID
@@ -32,12 +31,11 @@ For an individual API key, use `ASC_KEY_TYPE=individual` and unset
 `ASC_ISSUER_ID`. Key ID is required for both key types. Obtain API credentials
 from App Store Connect and use a key with permission to read the app.
 
-The server defaults to `127.0.0.1:8080`. From a second shell with the same
-`FIRE_API_TOKEN`, request an app's numeric App Store Connect ID (not its bundle ID):
+The server defaults to `127.0.0.1:8080` and serves the web UI on that address.
+From a second shell, request an app's numeric App Store Connect ID (not its bundle ID):
 
 ```sh
-curl http://127.0.0.1:8080/v1/apps/123456789/title \
-  -H "Authorization: Bearer $FIRE_API_TOKEN"
+curl http://127.0.0.1:8080/v1/apps/123456789/title
 ```
 
 ```json
@@ -50,9 +48,23 @@ metadata, so it does not establish that the app is publicly available.
 For an exact localized title, supply both the app-info ID and locale:
 
 ```sh
-curl 'http://127.0.0.1:8080/v1/apps/123456789/title?appInfoId=APP_INFO_ID&locale=zh-Hans' \
-  -H "Authorization: Bearer $FIRE_API_TOKEN"
+curl 'http://127.0.0.1:8080/v1/apps/123456789/title?appInfoId=APP_INFO_ID&locale=zh-Hans'
 ```
+
+List every app the key can read, then open one app's listing and builds:
+
+```sh
+curl http://127.0.0.1:8080/v1/apps
+
+curl http://127.0.0.1:8080/v1/apps/123456789/catalog
+```
+
+`/v1/apps` returns the App Store Connect resource ID, name, bundle ID, SKU,
+and primary locale. `/catalog` returns app-info localizations (title and
+subtitle), App Store version localizations (description, keywords, promotional
+text, what's new, and screenshot URLs), and every uploaded build, newest
+first. These lookups sign an unscoped five-minute JWT because Apple pagination
+is not known ahead of time. A catalog request can take up to a minute.
 
 Find the app-info ID using Apple's `GET /v1/apps/{id}/appInfos` endpoint.
 Select the desired metadata state explicitly, since draft and published app
@@ -66,26 +78,23 @@ Use relay mode when the `.p8` must remain on the user's device:
 
 ```sh
 export ASC_AUTH_MODE=relay
-export FIRE_API_TOKEN="$(openssl rand -hex 32)"
 export FIRE_ADDR=0.0.0.0:8080
 unset ASC_PRIVATE_KEY_PATH ASC_KEY_ID ASC_ISSUER_ID
 go run ./cmd/fire
 ```
 
 Place a TLS reverse proxy in front of the server and use HTTPS for remote
-requests. A CLI, desktop or mobile client signs an Apple JWT on the user's
-device, then sends it alongside the separate backend access token:
+requests. The browser, or another client, signs an Apple JWT on the user's
+device and sends it as `X-App-Store-Token`:
 
 ```sh
 curl https://your-server.example/v1/apps/123456789/title \
-  -H "Authorization: Bearer $FIRE_API_TOKEN" \
   -H "X-App-Store-Token: $APPLE_JWT"
 ```
 
 The backend forwards the JWT to Apple for authorization and does not store it.
 An Apple JWT is a temporary credential: keep it out of logs and URLs.
-The one `FIRE_API_TOKEN` is suitable for a private self-hosted instance;
-public multi-user hosting needs user authentication and authorization added.
+Pages from other hosts cannot read responses. Public multi-user hosting still needs user authentication and authorization added.
 
 The reusable Go package can sign on the client device:
 
@@ -107,10 +116,9 @@ if err != nil {
 
 `Signer.Token` issues five-minute ES256 tokens. Local backend mode scopes each
 token to the title lookup's Apple requests. Native clients may implement the
-same signing flow using their platform's secure key storage. A web client
-needs a local companion or browser-side signing implementation; a remote
-backend cannot read a path on the user's computer. This project does not yet
-implement browser key import or signing.
+same signing flow using their platform's secure key storage. The web client
+imports a `.p8` in the browser and sends only the signed JWT. A remote
+backend cannot read a path on the user's computer.
 
 If the user intentionally runs this backend on the same self-hosted machine
 where their key is stored, local mode also works there: set the path to a
@@ -119,21 +127,18 @@ file on that machine, or mount the file read-only when containerizing it.
 ## Configuration and contract
 
 See [.env.example](.env.example) for local configuration and
-[api/openapi.yaml](api/openapi.yaml) for the HTTP contract. Environment files
-are examples only; export the values yourself or use your service manager.
+[api/openapi.yaml](api/openapi.yaml) for the HTTP contract. On startup the
+server reads `service/.env` when that file exists. A variable already set in
+the shell is left unchanged.
 
-- `FIRE_ADDR`: bind address, default `127.0.0.1:8080`.
-- `FIRE_API_TOKEN`: required random secret of at least 32 characters.
-- `FIRE_ALLOWED_ORIGIN`: optional exact browser origin, such as
-  `http://localhost:3000`. Browser requests from other origins are rejected.
-- `ASC_AUTH_MODE`: `local` (default) or `relay`.
+- `FIRE_ADDR`: bind address, default `127.0.0.1:8080`. The web UI is served here.
+- `ASC_AUTH_MODE`: `local` or `relay`. When unset, a configured key selects local mode; otherwise the browser signs.
 - `ASC_KEY_TYPE`: `team` (default) or `individual`, in local mode.
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`: local signing settings.
 - `ASC_BASE_URL`: upstream override for tests, default Apple's API. HTTP is
   allowed only on loopback. Keep the production default for real credentials.
 
-`GET /healthz` is public and checks only the process. All title requests require
-backend authentication. Apple 401, 403, 404 and 429 statuses are preserved with
+`GET /healthz` checks only the process. Browser calls must come from the same host. Apple 401, 403, 404 and 429 statuses are preserved with
 sanitized error codes; network and invalid-response errors return 502, and
 timeouts return 504. A rate limit response forwards `Retry-After` when provided.
 The client uses a ten-second per-request timeout and the handler has a
@@ -156,7 +161,7 @@ These commands cover both the HTTP backend and Apple client/signer. You can
 also run `make test` and `make vet` from the repository root.
 
 Unit tests verify team and individual JWT claims, cryptographic signatures,
-key validation, backend authentication, query validation and browser origins.
+key validation, query validation and same-origin browser requests.
 Integration tests are opt-in and drive a running backend against the checked-in
 Postman simulation. Fixtures use Apple's documented response shapes and
 synthetic app data. The CLI session was signed out, so an owner-published
@@ -173,7 +178,6 @@ Apple key for this simulation):
 
 ```sh
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /tmp/fire-test.p8
-export FIRE_API_TOKEN=simulation-only-token-at-least-32-characters
 export ASC_AUTH_MODE=local
 export ASC_KEY_TYPE=team
 export ASC_KEY_ID=simulation-key
@@ -187,7 +191,6 @@ In a third terminal:
 
 ```sh
 FIRE_TEST_URL=http://127.0.0.1:8080 \
-FIRE_TEST_TOKEN=simulation-only-token-at-least-32-characters \
 go test ./integration -v
 ```
 

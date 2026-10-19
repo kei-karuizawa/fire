@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fire · App Store Connect</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=Outfit:wght@380;460;560&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <header class="brand">
+        <p class="eyebrow">App Store Connect</p>
+        <h1>Fire</h1>
+      </header>
+
+      <form id="connect-form" class="connect">
+        <label>
+          Where the .p8 is kept
+          <select id="key-home" name="home">
+            <option value="backend">On this server</option>
+            <option value="browser">In this browser</option>
+          </select>
+        </label>
+        <p id="backend-hint" class="hint">This server signs with the .p8 from its own key file. The page does not upload a key.</p>
+        <div id="browser-fields" hidden>
+          <div id="drop" class="drop" tabindex="0">
+            <input id="key-file" type="file" accept=".p8">
+            <p id="key-file-label">Drop the AuthKey .p8 here, or browse.</p>
+          </div>
+          <label>
+            Key ID
+            <input id="key-id" name="keyId" autocomplete="off" spellcheck="false">
+          </label>
+          <label>
+            Key type
+            <select id="key-type" name="keyType">
+              <option value="team">Team</option>
+              <option value="individual">Individual</option>
+            </select>
+          </label>
+          <label id="issuer-field">
+            Issuer ID
+            <input id="issuer-id" name="issuerId" autocomplete="off" spellcheck="false">
+          </label>
+          <p class="hint">Saved in this browser only. Apple also needs the Key ID, and a team key needs the Issuer ID. Those values are not inside the file.</p>
+          <button id="forget" type="button" hidden>Remove saved key</button>
+        </div>
+        <button id="connect" type="submit">Load apps</button>
+        <p id="status" class="status" role="status"></p>
+      </form>
+
+      <div id="library" class="library" hidden>
+        <div class="library-head">
+          <h2>Apps</h2>
+          <button id="reload" type="button">Reload</button>
+        </div>
+        <input id="filter" type="search" placeholder="Filter by name or bundle ID" autocomplete="off">
+        <p id="app-count" class="hint"></p>
+        <ul id="app-list"></ul>
+      </div>
+    </aside>
+
+    <main id="detail" class="detail">
+      <section class="empty">
+        <p class="eyebrow">Listing</p>
+        <h2>Choose the key, then an app.</h2>
+        <p>Fire lists every app that key can read, then the selected app’s title, subtitle, description, keywords, screenshots, and builds.</p>
+      </section>
+    </main>
+  </div>
+  <dialog id="lightbox">
+    <form method="dialog">
+      <button type="submit" class="close">Close</button>
+    </form>
+    <img id="lightbox-image" alt="">
+    <p id="lightbox-caption"></p>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>

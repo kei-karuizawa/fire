@@ -1,15 +1,15 @@
 openapi: 3.0.3
 info:
   title: Fire App Store Connect backend
-  version: 0.1.0
+  version: 0.3.0
   description: >-
-    Reads app titles using a locally held Apple key or a client-signed JWT.
-    Does not accept private key uploads. The backend access token is separate
-    from the Apple JWT. No credentials are returned in responses.
+    Reads App Store Connect apps, listing metadata, screenshots, and builds.
+    A .p8 may be held by this server, by the browser, or by an iOS Keychain.
+    The server never accepts a private-key upload. A browser or iOS client
+    signs a five-minute JWT and sends it in X-App-Store-Token. When that
+    header is absent and the server has a local key, the server signs.
 servers:
   - url: http://127.0.0.1:8080
-security:
-  - backendToken: []
 paths:
   /healthz:
     get:
@@ -24,6 +24,76 @@ paths:
                 type: object
                 properties:
                   status: {type: string, example: ok}
+  /v1/key:
+    get:
+      operationId: keyLocation
+      description: Reports whether this server process has a local .p8. Does not return the key.
+      responses:
+        '200':
+          description: Local key presence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backend]
+                properties:
+                  backend: {type: boolean}
+  /v1/apps:
+    get:
+      operationId: listApps
+      description: >-
+        Lists every app visible to the Apple API key, following Apple pagination.
+        In local mode the backend signs an unscoped five-minute JWT. In relay mode
+        the caller supplies that JWT in X-App-Store-Token. App IDs are App Store
+        Connect resource IDs, not bundle IDs.
+      parameters:
+        - $ref: '#/components/parameters/AppleToken'
+      responses:
+        '200':
+          description: Apps visible to the key, sorted by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apps]
+                properties:
+                  apps:
+                    type: array
+                    items: {$ref: '#/components/schemas/AppSummary'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/RateLimit'}
+        '500': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
+  /v1/apps/{appID}/catalog:
+    get:
+      operationId: getAppCatalog
+      description: >-
+        Reads one app's store listing and uploaded builds. Titles and subtitles
+        come from app-info localizations. Description, keywords, promotional text,
+        what's new, and screenshots come from App Store version localizations.
+        Screenshot URLs are HTTPS addresses derived from Apple's image template
+        after the asset is processed. Builds are newest upload first. The lookup
+        follows pagination and may take up to a minute.
+      parameters:
+        - $ref: '#/components/parameters/AppID'
+        - $ref: '#/components/parameters/AppleToken'
+      responses:
+        '200':
+          description: Listing metadata and builds for the app.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Catalog'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/RateLimit'}
+        '500': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '504': {$ref: '#/components/responses/Error'}
   /v1/apps/{appID}/title:
     get:
       operationId: getAppTitle
@@ -36,20 +106,14 @@ paths:
         In relay mode X-App-Store-Token is required; Apple validates it upstream.
         No automatic retries are made.
       parameters:
-        - name: appID
-          in: path
-          required: true
-          schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
+        - $ref: '#/components/parameters/AppID'
         - name: appInfoId
           in: query
           schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
         - name: locale
           in: query
           schema: {type: string, pattern: '^[A-Za-z0-9-]+$', maxLength: 35}
-        - name: X-App-Store-Token
-          in: header
-          description: Raw Apple JWT, required only in relay mode. Never a .p8 key.
-          schema: {type: string}
+        - $ref: '#/components/parameters/AppleToken'
       responses:
         '200':
           description: Title from App Store Connect; not a guarantee of public storefront availability.
@@ -69,23 +133,116 @@ paths:
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
-        '429':
-          description: Apple rate limit; wait before retrying.
-          headers:
-            Retry-After: {schema: {type: string}}
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/RateLimit'}
         '500': {$ref: '#/components/responses/Error'}
         '502': {$ref: '#/components/responses/Error'}
         '504': {$ref: '#/components/responses/Error'}
 components:
-  securitySchemes:
-    backendToken:
-      type: http
-      scheme: bearer
-      description: FIRE_API_TOKEN, separate from the Apple token.
+  parameters:
+    AppID:
+      name: appID
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
+    AppleToken:
+      name: X-App-Store-Token
+      in: header
+      description: Apple JWT signed in the browser from the .p8. Never the .p8 itself. Optional when the server holds a local key.
+      schema: {type: string}
   schemas:
+    AppSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        bundleId: {type: string}
+        sku: {type: string}
+        primaryLocale: {type: string}
+    Catalog:
+      type: object
+      required: [app, appInfos, versions, builds]
+      properties:
+        app: {$ref: '#/components/schemas/AppSummary'}
+        appInfos:
+          type: array
+          items: {$ref: '#/components/schemas/AppInfo'}
+        versions:
+          type: array
+          items: {$ref: '#/components/schemas/Version'}
+        builds:
+          type: array
+          items: {$ref: '#/components/schemas/Build'}
+    AppInfo:
+      type: object
+      required: [id, localizations]
+      properties:
+        id: {type: string}
+        state: {type: string}
+        ageRating: {type: string}
+        localizations:
+          type: array
+          items:
+            type: object
+            required: [locale]
+            properties:
+              locale: {type: string}
+              title: {type: string, description: App Store name from the app-info localization.}
+              subtitle: {type: string}
+              privacyPolicyUrl: {type: string}
+    Version:
+      type: object
+      required: [id, localizations]
+      properties:
+        id: {type: string}
+        platform: {type: string}
+        version: {type: string}
+        state: {type: string}
+        copyright: {type: string}
+        releaseType: {type: string}
+        createdDate: {type: string}
+        localizations:
+          type: array
+          items: {$ref: '#/components/schemas/VersionLocalization'}
+    VersionLocalization:
+      type: object
+      required: [locale, screenshotSets]
+      properties:
+        locale: {type: string}
+        description: {type: string}
+        keywords: {type: string, description: Comma-separated App Store keywords.}
+        promotionalText: {type: string}
+        whatsNew: {type: string}
+        supportUrl: {type: string}
+        marketingUrl: {type: string}
+        screenshotSets:
+          type: array
+          items:
+            type: object
+            required: [displayType, screenshots]
+            properties:
+              displayType: {type: string}
+              screenshots:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    fileName: {type: string}
+                    width: {type: integer}
+                    height: {type: integer}
+                    url: {type: string, description: HTTPS preview derived from Apple's template URL.}
+    Build:
+      type: object
+      required: [id, expired]
+      properties:
+        id: {type: string}
+        version: {type: string}
+        uploadedDate: {type: string}
+        expirationDate: {type: string}
+        expired: {type: boolean}
+        processingState: {type: string}
+        minOsVersion: {type: string}
+        usesNonExemptEncryption: {type: boolean}
     Error:
       type: object
       required: [error]
@@ -97,6 +254,13 @@ components:
             code: {type: string}
             message: {type: string}
   responses:
+    RateLimit:
+      description: Apple rate limit; wait before retrying.
+      headers:
+        Retry-After: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     Error:
       description: >-
         400 invalid input; 401 backend authentication or Apple JWT rejected;
