@@ -7,3 +7,4 @@ bin/
 *.ndjson
 *.log
 **/postman/.dependencies/
+.DS_Store
