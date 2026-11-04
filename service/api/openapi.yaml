@@ -1,248 +1,48 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: Fire App Store Connect backend
-  version: 0.3.0
-  description: >-
-    Reads App Store Connect apps, listing metadata, screenshots, and builds.
-    A .p8 may be held by this server, by the browser, or by an iOS Keychain.
-    The server never accepts a private-key upload. A browser or iOS client
-    signs a five-minute JWT and sends it in X-App-Store-Token. When that
-    header is absent and the server has a local key, the server signs.
+  title: Fire API
+  version: 1.0.0
+  description: |
+    The HTTP API behind the Fire web app. Each route combines App Store Connect
+    resources into the shape one screen needs.
+
+    Authentication: send a signed App Store Connect JWT in `X-App-Store-Token`,
+    or run Fire with a server key (see the backend README). Browser requests must
+    come from Fire's own origin or an origin listed in `FIRE_ALLOWED_ORIGINS`.
+
+    Request bodies are JSON (`Content-Type: application/json`); unknown fields
+    are rejected. Every error has the `Error` shape.
 servers:
-  - url: http://127.0.0.1:8080
-paths:
-  /healthz:
-    get:
-      operationId: health
-      security: []
-      responses:
-        '200':
-          description: Process is running; does not test Apple connectivity.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: {type: string, example: ok}
-  /v1/key:
-    get:
-      operationId: keyLocation
-      description: Reports whether this server process has a local .p8. Does not return the key.
-      responses:
-        '200':
-          description: Local key presence.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [backend]
-                properties:
-                  backend: {type: boolean}
-  /v1/apps:
-    get:
-      operationId: listApps
-      description: >-
-        Lists every app visible to the Apple API key, following Apple pagination.
-        In local mode the backend signs an unscoped five-minute JWT. In relay mode
-        the caller supplies that JWT in X-App-Store-Token. App IDs are App Store
-        Connect resource IDs, not bundle IDs.
-      parameters:
-        - $ref: '#/components/parameters/AppleToken'
-      responses:
-        '200':
-          description: Apps visible to the key, sorted by name.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [apps]
-                properties:
-                  apps:
-                    type: array
-                    items: {$ref: '#/components/schemas/AppSummary'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '429': {$ref: '#/components/responses/RateLimit'}
-        '500': {$ref: '#/components/responses/Error'}
-        '502': {$ref: '#/components/responses/Error'}
-        '504': {$ref: '#/components/responses/Error'}
-  /v1/apps/{appID}/catalog:
-    get:
-      operationId: getAppCatalog
-      description: >-
-        Reads one app's store listing and uploaded builds. Titles and subtitles
-        come from app-info localizations. Description, keywords, promotional text,
-        what's new, and screenshots come from App Store version localizations.
-        Screenshot URLs are HTTPS addresses derived from Apple's image template
-        after the asset is processed. Builds are newest upload first. The lookup
-        follows pagination and may take up to a minute.
-      parameters:
-        - $ref: '#/components/parameters/AppID'
-        - $ref: '#/components/parameters/AppleToken'
-      responses:
-        '200':
-          description: Listing metadata and builds for the app.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/Catalog'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '429': {$ref: '#/components/responses/RateLimit'}
-        '500': {$ref: '#/components/responses/Error'}
-        '502': {$ref: '#/components/responses/Error'}
-        '504': {$ref: '#/components/responses/Error'}
-  /v1/apps/{appID}/title:
-    get:
-      operationId: getAppTitle
-      description: >-
-        Without query parameters, returns apps.attributes.name and primaryLocale.
-        To read localized metadata, supply both appInfoId and locale. The app info
-        must belong to appID. Select its ID using Apple's list-app-infos endpoint;
-        the backend never guesses draft versus published metadata. A missing
-        localization returns 404 without falling back to another language.
-        In relay mode X-App-Store-Token is required; Apple validates it upstream.
-        No automatic retries are made.
-      parameters:
-        - $ref: '#/components/parameters/AppID'
-        - name: appInfoId
-          in: query
-          schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
-        - name: locale
-          in: query
-          schema: {type: string, pattern: '^[A-Za-z0-9-]+$', maxLength: 35}
-        - $ref: '#/components/parameters/AppleToken'
-      responses:
-        '200':
-          description: Title from App Store Connect; not a guarantee of public storefront availability.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [appId, title, locale, source]
-                properties:
-                  appId: {type: string}
-                  appInfoId: {type: string}
-                  title: {type: string}
-                  locale: {type: string}
-                  source: {type: string, enum: [app, appInfoLocalization]}
-              example: {appId: '123456789', title: My App, locale: en-US, source: app}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '429': {$ref: '#/components/responses/RateLimit'}
-        '500': {$ref: '#/components/responses/Error'}
-        '502': {$ref: '#/components/responses/Error'}
-        '504': {$ref: '#/components/responses/Error'}
+  - url: /api/v1
+security:
+  - browserToken: []
+  - {}
+
 components:
+  securitySchemes:
+    browserToken:
+      type: apiKey
+      in: header
+      name: X-App-Store-Token
+      description: An ES256 App Store Connect token, valid for at most 20 minutes.
   parameters:
-    AppID:
-      name: appID
+    app:
+      name: app
       in: path
       required: true
-      schema: {type: string, pattern: '^[A-Za-z0-9_-]+$', maxLength: 128}
-    AppleToken:
-      name: X-App-Store-Token
-      in: header
-      description: Apple JWT signed in the browser from the .p8. Never the .p8 itself. Optional when the server holds a local key.
-      schema: {type: string}
+      description: The app's Apple ID.
+      schema: { type: string }
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    kind:
+      name: kind
+      in: path
+      required: true
+      schema: { type: string, enum: [subscription, iap] }
   schemas:
-    AppSummary:
-      type: object
-      required: [id, name]
-      properties:
-        id: {type: string}
-        name: {type: string}
-        bundleId: {type: string}
-        sku: {type: string}
-        primaryLocale: {type: string}
-    Catalog:
-      type: object
-      required: [app, appInfos, versions, builds]
-      properties:
-        app: {$ref: '#/components/schemas/AppSummary'}
-        appInfos:
-          type: array
-          items: {$ref: '#/components/schemas/AppInfo'}
-        versions:
-          type: array
-          items: {$ref: '#/components/schemas/Version'}
-        builds:
-          type: array
-          items: {$ref: '#/components/schemas/Build'}
-    AppInfo:
-      type: object
-      required: [id, localizations]
-      properties:
-        id: {type: string}
-        state: {type: string}
-        ageRating: {type: string}
-        localizations:
-          type: array
-          items:
-            type: object
-            required: [locale]
-            properties:
-              locale: {type: string}
-              title: {type: string, description: App Store name from the app-info localization.}
-              subtitle: {type: string}
-              privacyPolicyUrl: {type: string}
-    Version:
-      type: object
-      required: [id, localizations]
-      properties:
-        id: {type: string}
-        platform: {type: string}
-        version: {type: string}
-        state: {type: string}
-        copyright: {type: string}
-        releaseType: {type: string}
-        createdDate: {type: string}
-        localizations:
-          type: array
-          items: {$ref: '#/components/schemas/VersionLocalization'}
-    VersionLocalization:
-      type: object
-      required: [locale, screenshotSets]
-      properties:
-        locale: {type: string}
-        description: {type: string}
-        keywords: {type: string, description: Comma-separated App Store keywords.}
-        promotionalText: {type: string}
-        whatsNew: {type: string}
-        supportUrl: {type: string}
-        marketingUrl: {type: string}
-        screenshotSets:
-          type: array
-          items:
-            type: object
-            required: [displayType, screenshots]
-            properties:
-              displayType: {type: string}
-              screenshots:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    fileName: {type: string}
-                    width: {type: integer}
-                    height: {type: integer}
-                    url: {type: string, description: HTTPS preview derived from Apple's template URL.}
-    Build:
-      type: object
-      required: [id, expired]
-      properties:
-        id: {type: string}
-        version: {type: string}
-        uploadedDate: {type: string}
-        expirationDate: {type: string}
-        expired: {type: boolean}
-        processingState: {type: string}
-        minOsVersion: {type: string}
-        usesNonExemptEncryption: {type: boolean}
     Error:
       type: object
       required: [error]
@@ -251,23 +51,319 @@ components:
           type: object
           required: [code, message]
           properties:
-            code: {type: string}
-            message: {type: string}
+            code:
+              type: string
+              description: |
+                One of invalid_request, no_credentials, origin_denied, not_found,
+                apple_authentication, apple_permission, apple_rate_limit,
+                apple_timeout, apple_unavailable, apple_rejected, network.
+            message: { type: string }
+    Document:
+      type: object
+      description: A screen document. Field names match web/src/lib/types.ts.
+      additionalProperties: true
+    LocalizationInput:
+      type: object
+      properties:
+        locale: { type: string, example: ja }
+        name: { type: string, maxLength: 30 }
+        description: { type: string, maxLength: 45 }
   responses:
-    RateLimit:
-      description: Apple rate limit; wait before retrying.
-      headers:
-        Retry-After: {schema: {type: string}}
+    Doc:
+      description: The updated or requested document.
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/Error'}
+          schema: { $ref: "#/components/schemas/Document" }
     Error:
-      description: >-
-        400 invalid input; 401 backend authentication or Apple JWT rejected;
-        403 Apple permission or browser origin denied; 404 app, app-info association or locale
-        missing; 500 internal or signing error; 502 upstream failure or malformed response; 504 Apple timeout.
-        Error codes distinguish backend authentication from Apple authentication.
-        Apple response bodies and credentials are not exposed.
+      description: An error from Fire or App Store Connect.
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/Error'}
+          schema: { $ref: "#/components/schemas/Error" }
+
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      security: []
+      responses:
+        "200": { description: OK }
+  /session:
+    get:
+      summary: Server key and version
+      description: "`serverKey` is null unless the server has its own key. Never returns key material."
+      security: []
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serverKey:
+                    type: [object, "null"]
+                    properties:
+                      keyId: { type: string }
+                      issuerId: { type: string }
+                      keyType: { type: string, enum: [team, individual] }
+                  version: { type: string }
+
+  /apps:
+    get:
+      summary: Apps the key can see
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /apps/{app}/overview:
+    get:
+      summary: Dashboard
+      description: Versions, recent builds, recent review submissions and localization completeness.
+      parameters: [{ $ref: "#/components/parameters/app" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /apps/{app}/metadata:
+    parameters: [{ $ref: "#/components/parameters/app" }]
+    get:
+      summary: Metadata for one version
+      parameters:
+        - { name: version, in: query, schema: { type: string }, description: An App Store version ID. Defaults to the newest. }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    patch:
+      summary: Save metadata changes
+      description: Only the fields sent are changed. A null value clears a field. Returns the refreshed metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                versionId: { type: string }
+                appInfoId: { type: string }
+                locales:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      locale: { type: string }
+                      appInfoLocalizationId: { type: string }
+                      versionLocalizationId: { type: string }
+                      fields:
+                        type: object
+                        description: |
+                          name and subtitle (30), privacyPolicyUrl, privacyChoicesUrl,
+                          description (4000), keywords (100), promotionalText (170),
+                          whatsNew (4000), supportUrl, marketingUrl.
+                        additionalProperties: { type: [string, "null"] }
+                version:
+                  type: object
+                  description: copyright, releaseType (MANUAL, AFTER_APPROVAL, SCHEDULED), earliestReleaseDate.
+                  additionalProperties: { type: [string, "null"] }
+                categories:
+                  type: object
+                  description: primaryCategory and secondaryCategory IDs.
+                  additionalProperties: { type: [string, "null"] }
+                reviewDetail:
+                  type: object
+                  description: Contact fields, demoAccountRequired, demoAccountName, demoAccountPassword, notes.
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /apps/{app}/metadata/locales:
+    post:
+      summary: Add a language to a version
+      description: The new localization starts with the primary language's text.
+      parameters: [{ $ref: "#/components/parameters/app" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [versionId, locale]
+              properties:
+                versionId: { type: string }
+                locale: { type: string, example: zh-Hant }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /localizations/{id}/screenshots:
+    get:
+      summary: Screenshot sets for a version localization
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /apps/{app}/reviews:
+    parameters: [{ $ref: "#/components/parameters/app" }]
+    get:
+      summary: App Review submissions
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    post:
+      summary: Submit a version for App Review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [versionId]
+              properties:
+                versionId: { type: string }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /apps/{app}/reviews/{id}/cancel:
+    post:
+      summary: Cancel a review submission
+      parameters: [{ $ref: "#/components/parameters/app" }, { $ref: "#/components/parameters/id" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /apps/{app}/builds:
+    get:
+      summary: Builds, beta groups and tester count
+      parameters:
+        - { $ref: "#/components/parameters/app" }
+        - { name: platform, in: query, schema: { type: string, enum: [IOS, MAC_OS, TV_OS, VISION_OS], default: IOS } }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /apps/{app}/testers:
+    post:
+      summary: Invite a TestFlight tester to beta groups
+      parameters: [{ $ref: "#/components/parameters/app" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, groupIds]
+              properties:
+                email: { type: string }
+                firstName: { type: string }
+                lastName: { type: string }
+                groupIds: { type: array, items: { type: string } }
+      responses: { "200": { description: Invited }, default: { $ref: "#/components/responses/Error" } }
+  /builds/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      summary: Build detail, groups, usage and tester feedback
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    patch:
+      summary: Save What to Test, or expire the build
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                whatToTest: { type: string, maxLength: 4000 }
+                expire: { type: boolean }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /builds/{id}/groups/{group}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: group, in: path, required: true, schema: { type: string } }
+    put:
+      summary: Add the build to a beta group
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    delete:
+      summary: Remove the build from a beta group
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /builds/{id}/beta-review:
+    post:
+      summary: Submit the build for Beta App Review
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /apps/{app}/purchases:
+    get:
+      summary: Subscription groups and in-app purchases
+      parameters: [{ $ref: "#/components/parameters/app" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /purchases/{kind}/{id}:
+    parameters: [{ $ref: "#/components/parameters/kind" }, { $ref: "#/components/parameters/id" }]
+    get:
+      summary: Product detail with localizations and prices in key territories
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    patch:
+      summary: Save the review note or Family Sharing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewNote: { type: string, maxLength: 4000 }
+                familySharable: { type: boolean }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /purchases/{kind}/{id}/localizations:
+    post:
+      summary: Add a product localization
+      parameters: [{ $ref: "#/components/parameters/kind" }, { $ref: "#/components/parameters/id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LocalizationInput" }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /purchases/{kind}/{id}/localizations/{loc}:
+    parameters:
+      - { $ref: "#/components/parameters/kind" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: loc, in: path, required: true, schema: { type: string }, description: The localization ID. }
+    patch:
+      summary: Update a product localization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LocalizationInput" }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+    delete:
+      summary: Delete a product localization
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /apps/{app}/sales:
+    get:
+      summary: Daily sales for the app and its in-app purchases
+      description: |
+        Built from daily Sales and Trends SUMMARY reports. Days Apple hasn't
+        published yet come back with `available: false`. Proceeds are grouped by
+        the currency Apple pays in and rounded to cents.
+      parameters:
+        - { $ref: "#/components/parameters/app" }
+        - { name: vendor, in: query, required: true, schema: { type: string, pattern: "^[0-9]{6,12}$" } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date }, description: At most 92 days after from. }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+
+  /team:
+    get:
+      summary: Users and pending invitations
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /team/invitations:
+    post:
+      summary: Invite a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, firstName, lastName, roles]
+              properties:
+                email: { type: string }
+                firstName: { type: string }
+                lastName: { type: string }
+                roles:
+                  type: array
+                  items: { type: string, enum: [ADMIN, APP_MANAGER, DEVELOPER, MARKETING, SALES, FINANCE, ACCESS_TO_REPORTS, CUSTOMER_SUPPORT, CREATE_APPS] }
+                allAppsVisible: { type: boolean }
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /team/invitations/{id}:
+    delete:
+      summary: Cancel an invitation
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
+  /team/users/{id}:
+    delete:
+      summary: Remove a user
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { $ref: "#/components/responses/Doc" }, default: { $ref: "#/components/responses/Error" } }
