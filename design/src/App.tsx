@@ -198,7 +198,6 @@ const navigation = [
   ["In-App Purchases", "tag"],
   ["Analytics", "chart"],
   ["Users & Access", "team"],
-  ["API Keys", "key"],
 ] as const
 
 const languages = [
@@ -6726,16 +6725,7 @@ function EmptyPage({ title }: { title: string }) {
   return (
     <div className="empty-page">
       <span className="card-icon warm">
-        <Icon
-          name={
-            title === "Analytics"
-              ? "chart"
-              : title === "API Keys"
-                ? "key"
-                : "apps"
-          }
-          size={24}
-        />
+        <Icon name={title === "Analytics" ? "chart" : "apps"} size={24} />
       </span>
       <h1>{title}</h1>
       <p>The Fire {title} workspace is ready.</p>
