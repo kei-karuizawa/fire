@@ -1,4 +1,4 @@
-.PHONY: run build test vet web
+.PHONY: run build test vet web design
 
 run:
 	cd service && go run ./cmd/fire
@@ -14,3 +14,6 @@ vet:
 
 web:
 	cd web && python3 -m http.server 3000
+
+design:
+	cd design && npm run dev

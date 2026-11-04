@@ -3,12 +3,46 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react"
+import {
+  aggregate,
+  analyticsEvents,
+  benchmarkMetrics,
+  breakdown,
+  bucketsFor,
+  dataEnd,
+  dataLength,
+  dateAt,
+  dimensions,
+  dimensionValues,
+  firstSelectable,
+  indexOfDate,
+  metric,
+  metricGroups,
+  peerGroupFactor,
+  peerGroups,
+  perfMetrics,
+  perfVersions,
+  reportCatalog,
+  seriesFor,
+  subscriptionEventTree,
+  visibleMetrics,
+  type Bucket,
+  type DimensionDef,
+  type DimensionKey,
+  type Granularity,
+  type PerfDevice,
+  type Platform,
+  type Scope,
+  type Unit,
+} from "./analyticsData"
 
-type IconName = "apps" | "bell" | "chart" | "check" | "chevron" | "cloud" | "dashboard" | "database" | "download" | "key" | "metadata" | "more" | "plus" | "search" | "settings" | "store" | "tag" | "team" | "upload"
+type IconName = "apps" | "bell" | "calendar" | "chart" | "check" | "chevron" | "cloud" | "dashboard" | "database" | "download" | "key" | "metadata" | "more" | "plus" | "search" | "settings" | "store" | "tag" | "team" | "upload"
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -24,6 +58,14 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
       <>
         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
         <path d="M10 21h4" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="3" y="5" width="18" height="16" rx="3" />
+        <path d="M3 10h18" />
+        <path d="M8 3v4" />
+        <path d="M16 3v4" />
       </>
     ),
     chart: (
@@ -155,7 +197,6 @@ const navigation = [
   ["Builds", "cloud"],
   ["In-App Purchases", "tag"],
   ["Analytics", "chart"],
-  ["Sales & Trends", "database"],
   ["Users & Access", "team"],
   ["API Keys", "key"],
 ] as const
@@ -3528,121 +3569,20 @@ function PurchasesPage({ notify }: { notify: (message: string) => void }) {
   )
 }
 
-type MetricKey =
-  | "impressions"
-  | "pageViews"
-  | "conversion"
-  | "downloads"
-  | "proceeds"
-  | "sessions"
-  | "crashes"
-
-const analyticsLength = 180
-
-// Data runs through yesterday
-const analyticsDates = Array.from({ length: analyticsLength }, (_, index) => {
-  const date = new Date(2025, 5, 23)
-  date.setDate(date.getDate() - (analyticsLength - 1 - index))
-  return date
-})
-
-const featureIndex = analyticsLength - 23
-
-function analyticsSeries(
-  base: number,
-  growth: number,
-  seed: number,
-  feature = 0,
-) {
-  return Array.from({ length: analyticsLength }, (_, index) => {
-    const trend = 1 + growth * (index / (analyticsLength - 1))
-    const weekly = 1 + 0.08 * Math.sin(((index + seed) / 7) * Math.PI * 2)
-    const noise =
-      1 +
-      0.06 * Math.sin(index * 1.7 + seed * 3.1) * Math.cos(index * 0.37 + seed)
-    const spike = 1 + feature * Math.exp(-((index - featureIndex) ** 2) / 10)
-    return base * trend * weekly * noise * spike
-  })
-}
-
-const analyticsRaw = {
-  impressions: analyticsSeries(38000, 0.28, 1, 0.9),
-  pageViews: analyticsSeries(5200, 0.3, 2, 0.7),
-  downloads: analyticsSeries(1550, 0.34, 3, 0.55),
-  proceeds: analyticsSeries(980, 0.36, 4, 0.3),
-  sessions: analyticsSeries(24000, 0.22, 5),
-  crashes: analyticsSeries(52, -0.35, 6),
-}
-
-const analyticsEvents = [
-  { index: analyticsLength - 29, label: "Version 3.1.4 released" },
-  { index: featureIndex, label: "Featured in Apps We Love" },
-]
-
-const analyticsMetrics: {
-  key: MetricKey
-  label: string
-  upIsGood: boolean
-}[] = [
-  { key: "impressions", label: "Impressions", upIsGood: true },
-  { key: "pageViews", label: "Product Page Views", upIsGood: true },
-  { key: "conversion", label: "Conversion Rate", upIsGood: true },
-  { key: "downloads", label: "Downloads", upIsGood: true },
-  { key: "proceeds", label: "Proceeds", upIsGood: true },
-  { key: "sessions", label: "Sessions", upIsGood: true },
-  { key: "crashes", label: "Crashes", upIsGood: false },
-]
-
-const analyticsRanges = [
-  [7, "Last 7 days"],
-  [30, "Last 30 days"],
-  [90, "Last 90 days"],
+const analyticsTabs = [
+  "Overview",
+  "Acquisition",
+  "App Store Features",
+  "Sales",
+  "Subscriptions",
+  "Cohorts",
+  "Engagement",
+  "Performance",
+  "Benchmarks",
+  "Metrics",
 ] as const
 
-const analyticsTerritories = [
-  { name: "United States", share: 0.34, conversion: 1.05, retention: 1.04 },
-  { name: "China mainland", share: 0.17, conversion: 0.92, retention: 0.95 },
-  { name: "Japan", share: 0.11, conversion: 1.1, retention: 1.08 },
-  { name: "United Kingdom", share: 0.07, conversion: 1, retention: 1.02 },
-  { name: "Germany", share: 0.06, conversion: 0.97, retention: 1.03 },
-  { name: "Taiwan", share: 0.05, conversion: 1.08, retention: 1 },
-  { name: "Canada", share: 0.04, conversion: 1.02, retention: 1.01 },
-  { name: "France", share: 0.04, conversion: 0.95, retention: 0.98 },
-  { name: "Other territories", share: 0.12, conversion: 0.9, retention: 0.94 },
-]
-
-// Keeps territory conversion rates averaging to the overall rate
-const conversionNorm = analyticsTerritories.reduce(
-  (total, item) => total + item.share * item.conversion,
-  0,
-)
-
-const downloadSources = [
-  ["App Store Search", 0.46],
-  ["App Store Browse", 0.21],
-  ["App Referrer", 0.14],
-  ["Web Referrer", 0.11],
-  ["Other", 0.08],
-] as const
-
-const proceedsByProduct = [
-  ["Fire Pro Monthly", 0.38],
-  ["Fire Pro Yearly", 0.34],
-  ["Fire Pro Lifetime", 0.19],
-  ["Fire Team Yearly", 0.05],
-  ["Fire Team Monthly", 0.04],
-] as const
-
-const retentionDays = [1, 3, 7, 14, 28]
-const retentionBase = [0.44, 0.33, 0.25, 0.19, 0.14]
-const retentionCohorts = [
-  ["May 12", 0.97],
-  ["May 19", 1],
-  ["May 26", 1.03],
-  ["Jun 2", 0.92],
-  ["Jun 9", 1.02],
-  ["Jun 16", 1.05],
-] as const
+type AnalyticsTab = (typeof analyticsTabs)[number]
 
 // One-hue sequential ramp, light to dark, from the app's orange
 const heatRamp = [
@@ -3655,6 +3595,20 @@ const heatRamp = [
   "#a03d17",
 ]
 
+// Validated categorical order. Hues follow the entity and are never cycled;
+// anything past the eighth value falls back to a neutral.
+const seriesPalette = [
+  "#2a78d6",
+  "#eb6834",
+  "#1baf7a",
+  "#eda100",
+  "#e87ba4",
+  "#008300",
+  "#6250d6",
+  "#e34948",
+]
+const seriesFallback = "#a39e98"
+
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -3663,16 +3617,60 @@ const compactNumber = new Intl.NumberFormat("en-US", {
 const shortDate = (date: Date) =>
   date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 
-function formatMetric(key: MetricKey, value: number, full = false) {
-  if (key === "conversion") return `${(value * 100).toFixed(1)}%`
-  if (key === "proceeds")
-    return full
-      ? `$${Math.round(value).toLocaleString("en-US")}`
-      : `$${compactNumber.format(value)}`
-  return full
-    ? Math.round(value).toLocaleString("en-US")
-    : compactNumber.format(value)
+const fullDate = (date: Date) =>
+  date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+
+const monthLabel = (ordinal: number) =>
+  new Date(Math.floor(ordinal / 12), ordinal % 12, 1).toLocaleDateString(
+    "en-US",
+    { month: "long", year: "numeric" },
+  )
+
+const monthOrdinal = (date: Date) => date.getFullYear() * 12 + date.getMonth()
+
+// Takes a half-open day-index range
+function rangeText(from: number, to: number) {
+  const start = dateAt(from)
+  const end = dateAt(to - 1)
+  if (to - from === 1) return fullDate(start)
+  return start.getFullYear() === end.getFullYear()
+    ? `${shortDate(start)} – ${fullDate(end)}`
+    : `${fullDate(start)} – ${fullDate(end)}`
 }
+
+const dayCount = (days: number) => `${days} ${days === 1 ? "day" : "days"}`
+
+function formatUnit(unit: Unit, value: number, full = false) {
+  switch (unit) {
+    case "percent":
+      return `${(value * 100).toFixed(value !== 0 && Math.abs(value) < 0.01 ? 2 : 1)}%`
+    case "currency":
+      if (Math.abs(value) < 100) return `$${value.toFixed(2)}`
+      return full || Math.abs(value) < 1000
+        ? `$${Math.round(value).toLocaleString("en-US")}`
+        : `$${compactNumber.format(value)}`
+    case "decimal":
+      return value.toFixed(1)
+    case "duration":
+      return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`
+    default:
+      // Counts are whole numbers, even when a filter scales them down
+      if (value > 0 && value < 1) return "<1"
+      return full || Math.abs(value) < 1000
+        ? Math.round(value).toLocaleString("en-US")
+        : compactNumber.format(value)
+  }
+}
+
+const formatMetric = (key: string, value: number, full = false) =>
+  formatUnit(metric(key).unit, value, full)
+
+const shortLabel = (label: string) =>
+  label.replace(" (Unique Devices)", " (Unique)").replace(" (All)", "")
 
 function niceScale(value: number) {
   const raw = value / 4 || 1
@@ -3683,24 +3681,51 @@ function niceScale(value: number) {
   return [0, 1, 2, 3, 4].map((index) => index * step)
 }
 
+type AnalyticsContext = {
+  from: number
+  to: number
+  days: number
+  compare: boolean
+  granularity: Granularity
+  scope: Scope
+  rangeLabel: string
+  previousLabel: string
+  tipProps: (
+    label: string,
+    value: string,
+  ) => {
+    tabIndex: number
+    onPointerMove: (event: ReactPointerEvent) => void
+    onPointerLeave: () => void
+    onFocus: (event: ReactFocusEvent<HTMLElement>) => void
+    onBlur: () => void
+  }
+  openMetric: (key: string) => void
+}
+
+type ChartSeries = {
+  label: string
+  values: number[]
+  tone: "primary" | "previous" | "line"
+  color?: string
+}
+
 function TrendChart({
-  dates,
-  values,
-  previous,
-  events,
+  axisLabels,
+  tooltipLabels,
+  series,
+  events = [],
   format,
   axisFormat,
   label,
-  previousLabel,
 }: {
-  dates: Date[]
-  values: number[]
-  previous?: number[]
-  events: { index: number; label: string }[]
+  axisLabels: string[]
+  tooltipLabels: string[]
+  series: ChartSeries[]
+  events?: { index: number; label: string }[]
   format: (value: number) => string
   axisFormat: (value: number) => string
   label: string
-  previousLabel: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(720)
@@ -3719,30 +3744,35 @@ function TrendChart({
   const pad = { top: 26, right: 58, bottom: 30, left: 50 }
   const plotWidth = Math.max(width - pad.left - pad.right, 10)
   const plotHeight = height - pad.top - pad.bottom
-  const ticks = niceScale(Math.max(...values, ...(previous ?? [])))
+  const count = axisLabels.length
+  const last = count - 1
+  const ticks = niceScale(Math.max(...series.flatMap((item) => item.values)))
   const max = ticks[ticks.length - 1]
   const x = (index: number) =>
-    pad.left + (index * plotWidth) / Math.max(values.length - 1, 1)
+    pad.left + (index * plotWidth) / Math.max(last, 1)
   const y = (value: number) => pad.top + plotHeight - (value / max) * plotHeight
-  const path = (series: number[]) =>
-    series
+  const path = (values: number[]) =>
+    values
       .map(
         (value, index) =>
           `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`,
       )
       .join("")
-  const last = values.length - 1
-  const labelEvery = Math.ceil(values.length / Math.max(plotWidth / 90, 2))
+  const labelEvery = Math.ceil(count / Math.max(plotWidth / 90, 2))
   const pointAt = (clientX: number, left: number) =>
     Math.min(
       Math.max(
-        Math.round(
-          ((clientX - left - pad.left) / plotWidth) * (values.length - 1),
-        ),
+        Math.round(((clientX - left - pad.left) / plotWidth) * last),
         0,
       ),
       last,
     )
+  const primary = series.find((item) => item.tone === "primary")
+  const toolTipSeries = [...series].sort((a, b) =>
+    hover === null || a.tone !== "line" || b.tone !== "line"
+      ? 0
+      : b.values[hover] - a.values[hover],
+  )
 
   return (
     <div
@@ -3774,8 +3804,8 @@ function TrendChart({
             </text>
           </g>
         ))}
-        {dates.map(
-          (date, index) =>
+        {axisLabels.map(
+          (text, index) =>
             (last - index) % labelEvery === 0 && (
               <text
                 key={index}
@@ -3783,7 +3813,7 @@ function TrendChart({
                 x={x(index)}
                 y={height - 8}
               >
-                {shortDate(date)}
+                {text}
               </text>
             ),
         )}
@@ -3801,22 +3831,37 @@ function TrendChart({
             </text>
           </g>
         ))}
-        {previous && (
-          <path className="an-line previous" d={path(previous)} />
+        {primary && (
+          <path
+            className="an-area"
+            d={`${path(primary.values)}L${x(last)},${y(0)}L${x(0)},${y(0)}Z`}
+          />
         )}
-        <path
-          className="an-area"
-          d={`${path(values)}L${x(last)},${y(0)}L${x(0)},${y(0)}Z`}
-        />
-        <path className="an-line" d={path(values)} />
-        <circle className="an-dot" cx={x(last)} cy={y(values[last])} r={4} />
-        <text
-          className="an-end-label"
-          x={x(last) + 9}
-          y={y(values[last]) + 4}
-        >
-          {axisFormat(values[last])}
-        </text>
+        {series.map((item) => (
+          <path
+            key={item.label}
+            className={`an-line ${item.tone === "previous" ? "previous" : ""}`}
+            style={item.color ? { stroke: item.color } : undefined}
+            d={path(item.values)}
+          />
+        ))}
+        {primary && (
+          <>
+            <circle
+              className="an-dot"
+              cx={x(last)}
+              cy={y(primary.values[last])}
+              r={4}
+            />
+            <text
+              className="an-end-label"
+              x={x(last) + 9}
+              y={y(primary.values[last]) + 4}
+            >
+              {axisFormat(primary.values[last])}
+            </text>
+          </>
+        )}
         {hover !== null && (
           <g>
             <line
@@ -3826,20 +3871,16 @@ function TrendChart({
               y1={pad.top}
               y2={y(0)}
             />
-            {previous && (
+            {series.map((item) => (
               <circle
-                className="an-dot previous"
+                key={item.label}
+                className={`an-dot ${item.tone === "previous" ? "previous" : ""}`}
+                style={item.color ? { fill: item.color } : undefined}
                 cx={x(hover)}
-                cy={y(previous[hover])}
+                cy={y(item.values[hover])}
                 r={4}
               />
-            )}
-            <circle
-              className="an-dot"
-              cx={x(hover)}
-              cy={y(values[hover])}
-              r={4}
-            />
+            ))}
           </g>
         )}
         <rect
@@ -3862,22 +3903,20 @@ function TrendChart({
       </svg>
       {hover !== null && (
         <div
-          className={`an-tooltip ${x(hover) > width - 190 ? "flip" : ""}`}
+          className={`an-tooltip ${x(hover) > width - 210 ? "flip" : ""}`}
           style={{ left: x(hover), top: pad.top }}
         >
-          <small>{shortDate(dates[hover])}</small>
-          <div>
-            <i />
-            <strong>{format(values[hover])}</strong>
-            <span>{label}</span>
-          </div>
-          {previous && (
-            <div>
-              <i className="previous" />
-              <strong>{format(previous[hover])}</strong>
-              <span>{previousLabel}</span>
+          <small>{tooltipLabels[hover]}</small>
+          {toolTipSeries.map((item) => (
+            <div key={item.label}>
+              <i
+                className={item.tone === "previous" ? "previous" : ""}
+                style={item.color ? { background: item.color } : undefined}
+              />
+              <strong>{format(item.values[hover])}</strong>
+              <span>{item.label}</span>
             </div>
-          )}
+          ))}
           {events
             .filter((event) => event.index === hover)
             .map((event) => (
@@ -3889,113 +3928,2617 @@ function TrendChart({
   )
 }
 
-function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
-  const [platform, setPlatform] = useState<"iOS" | "macOS">("iOS")
-  const [days, setDays] = useState<number>(30)
-  const [rangeMenu, setRangeMenu] = useState(false)
-  const [territory, setTerritory] = useState("All Territories")
-  const [compare, setCompare] = useState(true)
-  const [metric, setMetric] = useState<MetricKey>("downloads")
+function bucketLabels(buckets: Bucket[], granularity: Granularity) {
+  const multiYear =
+    dateAt(buckets[0][0]).getFullYear() !==
+    dateAt(buckets[buckets.length - 1][0]).getFullYear()
+  return {
+    axis: buckets.map(([from]) => {
+      const date = dateAt(from)
+      if (granularity !== "month") return shortDate(date)
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        ...(multiYear ? { year: "2-digit" } : {}),
+      })
+    }),
+    tooltip: buckets.map(([from, to]) => rangeText(from, to)),
+  }
+}
+
+const unfilteredBy = (key: string, scope: Scope) =>
+  (Object.keys(scope.filters) as DimensionKey[])
+    .filter((dimension) => !metric(key).dims.includes(dimension))
+    .map((dimension) => dimensions[dimension].label)
+
+function ChangeLabel({ metricKey, now, before }: {
+  metricKey: string
+  now: number
+  before: number
+}) {
+  if (!before) return <small className="an-flat">—</small>
+  const change = (now - before) / before
+  const good = change >= 0 === metric(metricKey).upIsGood
+  return (
+    <small className={good ? "good" : "bad"}>
+      {change >= 0 ? "▲" : "▼"} {Math.abs(change * 100).toFixed(1)}%
+    </small>
+  )
+}
+
+function TrendSection({
+  context,
+  metrics,
+}: {
+  context: AnalyticsContext
+  metrics: string[]
+}) {
+  const { from, to, days, compare, granularity, scope } = context
+  const [selected, setSelected] = useState(metrics[0])
   const [view, setView] = useState<"chart" | "table">("chart")
-  const [sort, setSort] = useState<{
-    key: "pageViews" | "conversion" | "downloads" | "proceeds"
-    desc: boolean
-  }>({ key: "downloads", desc: true })
+  const buckets = bucketsFor(from, to, granularity)
+  const priorBuckets = buckets.map(
+    ([start, end]): Bucket => [start - days, end - days],
+  )
+  const values = seriesFor(selected, buckets, scope)
+  const previous = seriesFor(selected, priorBuckets, scope)
+  const labels = bucketLabels(buckets, granularity)
+  const events = analyticsEvents
+    .filter((event) => event.index >= from && event.index < to)
+    .sort((a, b) => a.index - b.index)
+    .map((event) => ({
+      label: event.label,
+      date: dateAt(event.index),
+      index: buckets.findIndex(
+        ([start, end]) => event.index >= start && event.index < end,
+      ),
+    }))
+
+  return (
+    <section className="card an-trend">
+      <div
+        className="an-metrics"
+        role="tablist"
+        style={{ "--an-cols": metrics.length } as CSSProperties}
+      >
+        {metrics.map((key) => {
+          const note = unfilteredBy(key, scope)
+          return (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={selected === key}
+              className={selected === key ? "active" : ""}
+              title={metric(key).definition}
+              onClick={() => setSelected(key)}
+            >
+              <span>{shortLabel(metric(key).label)}</span>
+              <strong>
+                {formatMetric(key, aggregate(key, from, to, scope))}
+              </strong>
+              <ChangeLabel
+                metricKey={key}
+                now={aggregate(key, from, to, scope)}
+                before={aggregate(key, from - days, from, scope)}
+              />
+              {note.length > 0 && <em>Not split by {note.join(", ")}</em>}
+            </button>
+          )
+        })}
+      </div>
+      <div className="an-trend-head">
+        <div className="an-legend">
+          <span>
+            <i />
+            {context.rangeLabel}
+          </span>
+          {compare && (
+            <span>
+              <i className="previous" />
+              {context.previousLabel}
+            </span>
+          )}
+        </div>
+        <div className="platform-switch an-view-switch">
+          {(["chart", "table"] as const).map((item) => (
+            <button
+              key={item}
+              className={view === item ? "active" : ""}
+              onClick={() => setView(item)}
+            >
+              {item === "chart" ? "Chart" : "Table"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {view === "chart" ? (
+        <>
+          <TrendChart
+            axisLabels={labels.axis}
+            tooltipLabels={labels.tooltip}
+            series={[
+              ...(compare
+                ? [
+                    {
+                      label: context.previousLabel,
+                      values: previous,
+                      tone: "previous" as const,
+                    },
+                  ]
+                : []),
+              {
+                label: context.rangeLabel,
+                values,
+                tone: "primary" as const,
+              },
+            ]}
+            events={events}
+            format={(value) => formatMetric(selected, value, true)}
+            axisFormat={(value) => formatMetric(selected, value)}
+            label={metric(selected).label}
+          />
+          {events.length > 0 && (
+            <ol className="an-events">
+              {events.map((event, index) => (
+                <li key={event.label}>
+                  <b>{index + 1}</b>
+                  {shortDate(event.date)} · {event.label}
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
+      ) : (
+        <div className="an-table-view">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>{metric(selected).label}</th>
+                {compare && <th>Previous Period</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {[...values.keys()].reverse().map((index) => (
+                <tr key={index}>
+                  <td>{labels.tooltip[index]}</td>
+                  <td>{formatMetric(selected, values[index], true)}</td>
+                  {compare && (
+                    <td>{formatMetric(selected, previous[index], true)}</td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CardHeading({
+  icon,
+  tone,
+  title,
+  note,
+  children,
+}: {
+  icon: IconName
+  tone: "warm" | "pale" | "sand" | "orange"
+  title: string
+  note?: string
+  children?: ReactNode
+}) {
+  return (
+    <div className="card-heading">
+      <div>
+        <span className={`card-icon ${tone}`}>
+          <Icon name={icon} size={17} />
+        </span>
+        <h2>{title}</h2>
+        {note && <p>{note}</p>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const width = 100
+  const height = 26
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  const points = values
+    .map((value, index) => {
+      const px = (index / Math.max(values.length - 1, 1)) * width
+      const py = height - 2 - ((value - min) / (max - min || 1)) * (height - 4)
+      return `${px.toFixed(1)},${py.toFixed(1)}`
+    })
+    .join(" ")
+  return (
+    <svg
+      className="an-spark"
+      aria-hidden="true"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+    >
+      <polyline points={points} vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+function StatGroup({
+  context,
+  icon,
+  tone,
+  title,
+  note,
+  metrics,
+}: {
+  context: AnalyticsContext
+  icon: IconName
+  tone: "warm" | "pale" | "sand" | "orange"
+  title: string
+  note?: string
+  metrics: string[]
+}) {
+  const { from, to, days, scope } = context
+  const sparkBuckets = bucketsFor(
+    from,
+    to,
+    days > 180 ? "month" : days > 31 ? "week" : "day",
+  )
+  return (
+    <section className="card an-stat-card">
+      <CardHeading icon={icon} tone={tone} title={title} note={note} />
+      <div className="an-stats">
+        {metrics.map((key) => {
+          const now = aggregate(key, from, to, scope)
+          const notes = unfilteredBy(key, scope)
+          return (
+            <button
+              key={key}
+              className="an-stat"
+              title={`${metric(key).definition} Open in Metrics.`}
+              onClick={() => context.openMetric(key)}
+            >
+              <span>{shortLabel(metric(key).label)}</span>
+              <strong>{formatMetric(key, now)}</strong>
+              <ChangeLabel
+                metricKey={key}
+                now={now}
+                before={aggregate(key, from - days, from, scope)}
+              />
+              {notes.length > 0 && <em>Not split by {notes.join(", ")}</em>}
+              <Sparkline values={seriesFor(key, sparkBuckets, scope)} />
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function BreakdownCard({
+  context,
+  icon,
+  tone,
+  title,
+  note,
+  metrics,
+  dimension,
+}: {
+  context: AnalyticsContext
+  icon: IconName
+  tone: "warm" | "pale" | "sand" | "orange"
+  title: string
+  note?: string
+  metrics: string[]
+  dimension: DimensionKey
+}) {
+  const { from, to, scope } = context
+  const [selected, setSelected] = useState(metrics[0])
+  const rows = breakdown(selected, dimension, from, to, scope)
+  const max = Math.max(...rows.map((row) => row.value), 0)
+  return (
+    <section className="card">
+      <CardHeading icon={icon} tone={tone} title={title} note={note}>
+        {metrics.length > 1 && (
+          <select
+            className="an-select an-select-small"
+            aria-label={`${title} metric`}
+            value={selected}
+            onChange={(event) => setSelected(event.target.value)}
+          >
+            {metrics.map((key) => (
+              <option key={key} value={key}>
+                {shortLabel(metric(key).label)}
+              </option>
+            ))}
+          </select>
+        )}
+      </CardHeading>
+      <div className="an-bars">
+        {rows.map((row) => (
+          <div key={row.name} className="an-bar-row">
+            <span title={row.name}>{row.name}</span>
+            <div
+              className="an-track"
+              {...context.tipProps(
+                row.name,
+                `${formatMetric(selected, row.value, true)} ${shortLabel(metric(selected).label).toLowerCase()}${
+                  row.share === null
+                    ? ""
+                    : ` · ${(row.share * 100).toFixed(1)}%`
+                }`,
+              )}
+            >
+              <b style={{ width: `${max ? (row.value / max) * 100 : 0}%` }} />
+            </div>
+            <strong>{formatMetric(selected, row.value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AnalyticsTable({
+  context,
+  icon,
+  tone,
+  title,
+  note,
+  dimension,
+  columns,
+  shareOf,
+}: {
+  context: AnalyticsContext
+  icon: IconName
+  tone: "warm" | "pale" | "sand" | "orange"
+  title: string
+  note?: string
+  dimension: DimensionKey
+  columns: string[]
+  shareOf?: string
+}) {
+  const { from, to, scope } = context
+  const [sort, setSort] = useState({ key: columns[0], desc: true })
+  const names = breakdown(columns[0], dimension, from, to, scope).map(
+    (row) => row.name,
+  )
+  const supports = (key: string) => metric(key).dims.includes(dimension)
+  const rows = names
+    .map((name) => {
+      const scoped: Scope = {
+        ...scope,
+        filters: { ...scope.filters, [dimension]: name },
+      }
+      return {
+        name,
+        scoped,
+        values: Object.fromEntries(
+          columns.map((key) => [key, aggregate(key, from, to, scoped)]),
+        ),
+        share: shareOf ? aggregate(shareOf, from, to, scoped) : 0,
+      }
+    })
+    .sort((a, b) =>
+      sort.desc
+        ? b.values[sort.key] - a.values[sort.key]
+        : a.values[sort.key] - b.values[sort.key],
+    )
+  const shareTotal = rows.reduce((total, row) => total + row.share, 0)
+  return (
+    <section className="card an-table-card">
+      <CardHeading
+        icon={icon}
+        tone={tone}
+        title={title}
+        note={note ?? "Click a column to sort"}
+      />
+      <div className="an-table-wrap">
+        <table className="an-table">
+          <thead>
+            <tr>
+              <th>{dimensions[dimension].label}</th>
+              {columns.map((key) => (
+                <th key={key}>
+                  <button
+                    className={sort.key === key ? "active" : ""}
+                    title={metric(key).definition}
+                    onClick={() =>
+                      setSort({
+                        key,
+                        desc: sort.key === key ? !sort.desc : true,
+                      })
+                    }
+                  >
+                    {shortLabel(metric(key).label)}
+                    {sort.key === key && (sort.desc ? " ↓" : " ↑")}
+                  </button>
+                </th>
+              ))}
+              {shareOf && (
+                <th>Share of {shortLabel(metric(shareOf).label)}</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.name}>
+                <td>{row.name}</td>
+                {columns.map((key) => (
+                  <td key={key}>
+                    {supports(key)
+                      ? formatMetric(key, row.values[key], true)
+                      : "—"}
+                  </td>
+                ))}
+                {shareOf && (
+                  <td>
+                    <span className="an-share">
+                      <i>
+                        <b
+                          style={{
+                            width: `${shareTotal ? (row.share / shareTotal) * 100 : 0}%`,
+                          }}
+                        />
+                      </i>
+                      {shareTotal
+                        ? ((row.share / shareTotal) * 100).toFixed(1)
+                        : "0.0"}
+                      %
+                    </span>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function CohortHeatmap({
+  context,
+  columns,
+  rows,
+  cell,
+  format,
+  scaleMax,
+}: {
+  context: AnalyticsContext
+  columns: string[]
+  rows: { label: string; size?: string }[]
+  cell: (row: number, column: number) => number | null
+  format: (value: number) => string
+  scaleMax: number
+}) {
+  const hasSize = rows.some((row) => row.size)
+  return (
+    <>
+      <div
+        className="an-heatmap"
+        style={{ "--an-cols": columns.length, "--an-side": hasSize ? "130px" : "60px" } as CSSProperties}
+      >
+        <span className="an-heat-head an-heat-corner">
+          {hasSize ? "Cohort · Size" : ""}
+        </span>
+        {columns.map((column) => (
+          <span key={column} className="an-heat-head">
+            {column}
+          </span>
+        ))}
+        {rows.map((row, rowIndex) => (
+          <Fragment key={row.label}>
+            <span className="an-heat-week">
+              {row.label}
+              {row.size && <small>{row.size}</small>}
+            </span>
+            {columns.map((column, columnIndex) => {
+              const value = cell(rowIndex, columnIndex)
+              if (value === null) {
+                return (
+                  <span key={column} className="an-heat-cell empty">
+                    —
+                  </span>
+                )
+              }
+              const step = Math.min(
+                Math.floor((value / scaleMax) * heatRamp.length),
+                heatRamp.length - 1,
+              )
+              return (
+                <span
+                  key={column}
+                  className="an-heat-cell"
+                  style={{
+                    background: heatRamp[step],
+                    color: step >= 4 ? "#fff" : "#4a3328",
+                  }}
+                  {...context.tipProps(`${row.label} · ${column}`, format(value))}
+                >
+                  {format(value)}
+                </span>
+              )
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div className="an-heat-scale">
+        <span>{format(0)}</span>
+        <i>
+          {heatRamp.map((color) => (
+            <b key={color} style={{ background: color }} />
+          ))}
+        </i>
+        <span>{format(scaleMax)}+</span>
+      </div>
+    </>
+  )
+}
+
+// Stable per-cohort variation, keyed by the cohort's absolute position
+const cohortFactor = (index: number) => 1 + 0.07 * Math.sin(index * 2.3)
+
+function weeklyCohorts(to: number, count: number) {
+  return Array.from({ length: count }, (_, row) => {
+    const end = to - 7 * (count - 1 - row)
+    const start = end - 7
+    return { start, end, label: shortDate(dateAt(start)) }
+  })
+}
+
+function RetentionCard({ context }: { context: AnalyticsContext }) {
+  const { from, to, scope } = context
+  const days = [1, 3, 7, 14, 28]
+  const base = [0.44, 0.33, 0.25, 0.19, 0.14]
+  const cohorts = weeklyCohorts(to, 6)
+  const tilt =
+    aggregate("retention1", from, to, scope) /
+    aggregate("retention1", from, to, { platform: "iOS", filters: {} })
+  return (
+    <section className="card">
+      <CardHeading
+        icon="team"
+        tone="sand"
+        title="Retention"
+        note="Share of each weekly install cohort still using Fire"
+      />
+      <CohortHeatmap
+        context={context}
+        columns={days.map((day) => `Day ${day}`)}
+        rows={cohorts.map((cohort) => ({ label: cohort.label }))}
+        cell={(row, column) =>
+          cohorts[row].start + days[column] < dataLength
+            ? Math.min(
+                base[column] * cohortFactor(cohorts[row].start / 7) * tilt,
+                0.99,
+              )
+            : null
+        }
+        format={(value) => `${(value * 100).toFixed(0)}%`}
+        scaleMax={0.5}
+      />
+    </section>
+  )
+}
+
+function FunnelCard({ context }: { context: AnalyticsContext }) {
+  const { from, to, scope } = context
+  const funnel = ["impressions", "pageViews", "downloads"].map((key) => ({
+    key,
+    title: metric(key).label,
+    value: aggregate(key, from, to, scope),
+  }))
+  return (
+    <section className="card">
+      <CardHeading
+        icon="search"
+        tone="warm"
+        title="Acquisition Funnel"
+        note="From seeing Fire on the App Store to downloading it"
+      />
+      <div className="an-funnel">
+        {funnel.map((step, index) => (
+          <div key={step.key} className="an-funnel-step">
+            <div className="an-bar-label">
+              <span>{step.title}</span>
+              <strong>{formatMetric(step.key, step.value, true)}</strong>
+            </div>
+            <div
+              className="an-track"
+              {...context.tipProps(
+                step.title,
+                formatMetric(step.key, step.value, true),
+              )}
+            >
+              <b style={{ width: `${(step.value / funnel[0].value) * 100}%` }} />
+            </div>
+            {index > 0 && (
+              <small>
+                {((step.value / funnel[index - 1].value) * 100).toFixed(1)}% of{" "}
+                {funnel[index - 1].title.toLowerCase()}
+              </small>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+const territoryColumns = ["pageViews", "conversion", "downloads", "proceeds"]
+
+function OverviewTab({ context }: { context: AnalyticsContext }) {
+  return (
+    <>
+      <TrendSection
+        context={context}
+        metrics={[
+          "impressions",
+          "pageViews",
+          "conversion",
+          "downloads",
+          "proceeds",
+          "sessions",
+          "crashes",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="search"
+        tone="warm"
+        title="Acquisition"
+        metrics={[
+          "firstTimeDownloads",
+          "redownloads",
+          "conversion",
+          "impressions",
+          "pageViews",
+          "updates",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="tag"
+        tone="orange"
+        title="Sales"
+        metrics={[
+          "proceeds",
+          "payingUsers",
+          "iap",
+          "downloadToPaid1",
+          "downloadToPaid7",
+          "downloadToPaid35",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="database"
+        tone="pale"
+        title="Subscriptions"
+        metrics={[
+          "activePlans",
+          "paidPlans",
+          "mrr",
+          "netPaidPlans",
+          "planStarts",
+          "conversionToPaid",
+          "churned",
+          "offersFromPaid",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="team"
+        tone="sand"
+        title="App Usage"
+        metrics={[
+          "sessions",
+          "crashes",
+          "clipInstallations",
+          "retention1",
+          "retention7",
+          "retention14",
+          "retention28",
+        ]}
+      />
+      <AnalyticsTable
+        context={context}
+        icon="store"
+        tone="pale"
+        title="Territories"
+        note="Performance by App Store territory · Click a column to sort"
+        dimension="territory"
+        columns={territoryColumns}
+        shareOf="downloads"
+      />
+    </>
+  )
+}
+
+function AcquisitionTab({ context }: { context: AnalyticsContext }) {
+  const reach = ["pageViews", "pageViewsUnique", "downloads", "conversion"]
+  return (
+    <>
+      <TrendSection
+        context={context}
+        metrics={[
+          "impressions",
+          "impressionsUnique",
+          "pageViews",
+          "pageViewsUnique",
+          "conversion",
+          "firstTimeDownloads",
+          "redownloads",
+        ]}
+      />
+      <div className="an-grid">
+        <FunnelCard context={context} />
+        <BreakdownCard
+          context={context}
+          icon="apps"
+          tone="pale"
+          title="Source Type"
+          note="Where people tapped through from"
+          metrics={["downloads", ...reach.slice(0, 2), "impressions", "conversion"]}
+          dimension="sourceType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="team"
+          tone="sand"
+          title="App Referrers"
+          note="Apps that sent people to the product page"
+          metrics={reach}
+          dimension="appReferrer"
+        />
+        <BreakdownCard
+          context={context}
+          icon="cloud"
+          tone="warm"
+          title="Web Referrers"
+          note="Websites that sent people to the product page"
+          metrics={reach}
+          dimension="webReferrer"
+        />
+        <BreakdownCard
+          context={context}
+          icon="metadata"
+          tone="pale"
+          title="Page Type"
+          note="Which App Store surface people saw"
+          metrics={["pageViews", "downloads", "conversion"]}
+          dimension="pageType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="download"
+          tone="orange"
+          title="Download Type"
+          note="First-time downloads versus redownloads"
+          metrics={["downloads"]}
+          dimension="downloadType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="dashboard"
+          tone="sand"
+          title="Device"
+          metrics={["downloads", "pageViews", "conversion"]}
+          dimension="device"
+        />
+        <BreakdownCard
+          context={context}
+          icon="settings"
+          tone="pale"
+          title="Platform Version"
+          metrics={["downloads", "pageViews", "conversion"]}
+          dimension="platformVersion"
+        />
+        <BreakdownCard
+          context={context}
+          icon="store"
+          tone="warm"
+          title="Region"
+          metrics={["downloads", "pageViews", "conversion"]}
+          dimension="region"
+        />
+      </div>
+      <StatGroup
+        context={context}
+        icon="cloud"
+        tone="pale"
+        title="Web Preview and Pre-Orders"
+        note="App Store website engagement and pre-order activity"
+        metrics={[
+          "webPreviewViews",
+          "webPreviewTaps",
+          "preOrders",
+          "preOrderCancels",
+        ]}
+      />
+      <AnalyticsTable
+        context={context}
+        icon="store"
+        tone="pale"
+        title="Territories"
+        note="Performance by App Store territory · Click a column to sort"
+        dimension="territory"
+        columns={territoryColumns}
+        shareOf="downloads"
+      />
+    </>
+  )
+}
+
+const productPageTests = [
+  { name: "Baseline", impressions: 118400, conversion: 0.081, lift: null, confidence: null },
+  { name: "Treatment A · Focus screenshots", impressions: 117900, conversion: 0.094, lift: 0.16, confidence: 0.97 },
+  { name: "Treatment B · New icon", impressions: 118150, conversion: 0.084, lift: 0.037, confidence: 0.62 },
+]
+
+function FeaturesTab({ context }: { context: AnalyticsContext }) {
+  const { scope } = context
+  const scale = scope.platform === "iOS" ? 1 : 0.07
+  return (
+    <>
+      <AnalyticsTable
+        context={context}
+        icon="metadata"
+        tone="warm"
+        title="Product Pages"
+        note="Default and custom product pages · Click a column to sort"
+        dimension="productPage"
+        columns={[
+          "impressions",
+          "pageViews",
+          "conversion",
+          "downloads",
+          "proceeds",
+          "payingUsers",
+        ]}
+        shareOf="downloads"
+      />
+      <section className="card an-table-card">
+        <CardHeading
+          icon="chart"
+          tone="sand"
+          title="Product Page Optimization"
+          note="Test “Summer listing” · Running for 21 days"
+        />
+        <div className="an-table-wrap">
+          <table className="an-table">
+            <thead>
+              <tr>
+                <th>Treatment</th>
+                <th>Impressions</th>
+                <th>Conversion Rate</th>
+                <th>Improvement</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productPageTests.map((row) => (
+                <tr key={row.name}>
+                  <td>{row.name}</td>
+                  <td>{formatUnit("count", row.impressions * scale, true)}</td>
+                  <td>{formatUnit("percent", row.conversion)}</td>
+                  <td>
+                    {row.lift === null ? "—" : `+${(row.lift * 100).toFixed(1)}%`}
+                  </td>
+                  <td>
+                    {row.confidence === null
+                      ? "—"
+                      : `${(row.confidence * 100).toFixed(0)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <AnalyticsTable
+        context={context}
+        icon="bell"
+        tone="orange"
+        title="In-App Events"
+        note="Event engagement and outcomes · Click a column to sort"
+        dimension="inAppEvent"
+        columns={[
+          "eventImpressions",
+          "eventImpressionsUnique",
+          "eventPageViews",
+          "eventPageViewsUnique",
+          "eventAppOpens",
+          "eventReminders",
+          "eventNotificationTaps",
+        ]}
+      />
+      <AnalyticsTable
+        context={context}
+        icon="tag"
+        tone="pale"
+        title="Campaigns"
+        note="Campaign link attribution · Click a column to sort"
+        dimension="campaign"
+        columns={[
+          "pageViews",
+          "downloads",
+          "conversion",
+          "sessions",
+          "proceeds",
+          "payingUsers",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="apps"
+        tone="warm"
+        title="App Clips"
+        metrics={[
+          "clipCardViews",
+          "clipCardViewsUnique",
+          "clipInstallations",
+          "clipSessions",
+          "clipActiveDevices",
+          "clipCrashes",
+        ]}
+      />
+      <div className="an-grid">
+        <BreakdownCard
+          context={context}
+          icon="apps"
+          tone="sand"
+          title="App Clip Sources"
+          note="How the App Clip card was invoked"
+          metrics={["clipCardViews", "clipInstallations", "clipSessions"]}
+          dimension="clipSource"
+        />
+        <BreakdownCard
+          context={context}
+          icon="download"
+          tone="pale"
+          title="Standard Downloads and Pre-Orders"
+          metrics={["downloads"]}
+          dimension="preOrders"
+        />
+      </div>
+    </>
+  )
+}
+
+function SalesTab({ context }: { context: AnalyticsContext }) {
+  const money = ["proceeds", "sales", "iap", "payingUsers"]
+  return (
+    <>
+      <TrendSection
+        context={context}
+        metrics={[
+          "proceeds",
+          "sales",
+          "payingUsers",
+          "iap",
+          "proceedsPerUser",
+          "salesPerUser",
+          "proceedsRefundRate",
+        ]}
+      />
+      <div className="an-grid">
+        <BreakdownCard
+          context={context}
+          icon="tag"
+          tone="orange"
+          title="By Product"
+          note="Each in-app purchase and subscription"
+          metrics={money}
+          dimension="purchase"
+        />
+        <BreakdownCard
+          context={context}
+          icon="database"
+          tone="pale"
+          title="Purchase Type"
+          metrics={money}
+          dimension="purchaseType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="apps"
+          tone="sand"
+          title="Source Type"
+          note="Purchases attributed to the download source"
+          metrics={money}
+          dimension="sourceType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="store"
+          tone="warm"
+          title="Region"
+          metrics={money}
+          dimension="region"
+        />
+      </div>
+      <StatGroup
+        context={context}
+        icon="download"
+        tone="warm"
+        title="Download to Paid"
+        note="Downloads that made a first purchase in time"
+        metrics={["downloadToPaid1", "downloadToPaid7", "downloadToPaid35"]}
+      />
+      <StatGroup
+        context={context}
+        icon="upload"
+        tone="sand"
+        title="Refunds"
+        metrics={[
+          "refundedProceeds",
+          "refundedSales",
+          "refundedPurchases",
+          "proceedsRefundRate",
+          "salesRefundRate",
+          "purchaseRefundRate",
+        ]}
+      />
+      <div className="an-grid">
+        <BreakdownCard
+          context={context}
+          icon="upload"
+          tone="pale"
+          title="Refund Type"
+          metrics={["refundedProceeds", "refundedPurchases"]}
+          dimension="refundType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="tag"
+          tone="orange"
+          title="Refunds by Product"
+          metrics={["refundedProceeds", "refundedPurchases"]}
+          dimension="purchase"
+        />
+      </div>
+      <AnalyticsTable
+        context={context}
+        icon="store"
+        tone="pale"
+        title="Sales by Territory"
+        note="Click a column to sort"
+        dimension="territory"
+        columns={[
+          "proceeds",
+          "sales",
+          "payingUsers",
+          "iap",
+          "proceedsPerUser",
+          "proceedsRefundRate",
+        ]}
+        shareOf="proceeds"
+      />
+    </>
+  )
+}
+
+const planStateKeys = [
+  "freeTrials",
+  "paidOffers",
+  "fullPrice",
+  "preservedPrice",
+  "contingentPrice",
+  "gracePeriod",
+  "billingRetry",
+]
+
+function PlanStateCard({ context }: { context: AnalyticsContext }) {
+  const { to, scope } = context
+  const rows = planStateKeys.map((key, index) => ({
+    key,
+    label: metric(key).label,
+    color: seriesPalette[index],
+    value: aggregate(key, to - 1, to, scope),
+  }))
+  const total = rows.reduce((sum, row) => sum + row.value, 0)
+  return (
+    <section className="card">
+      <CardHeading
+        icon="database"
+        tone="pale"
+        title="Plans by State"
+        note={`${formatUnit("count", total, true)} subscriptions on ${fullDate(dateAt(to - 1))}`}
+      />
+      <div className="an-stack" role="img" aria-label="Plans by state">
+        {rows.map((row) => (
+          <b
+            key={row.key}
+            style={{
+              flexGrow: row.value,
+              background: row.color,
+            }}
+            {...context.tipProps(
+              row.label,
+              `${formatUnit("count", row.value, true)} · ${((row.value / total) * 100).toFixed(1)}%`,
+            )}
+          />
+        ))}
+      </div>
+      <ul className="an-stack-legend">
+        {rows.map((row) => (
+          <li key={row.key}>
+            <i style={{ background: row.color }} />
+            <span>{row.label}</span>
+            <strong>{formatUnit("count", row.value, true)}</strong>
+            <small>{((row.value / total) * 100).toFixed(1)}%</small>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function SubscriptionEventsCard({ context }: { context: AnalyticsContext }) {
+  const { from, to, days, scope } = context
+  const [open, setOpen] = useState<string[]>(["offerStarts"])
+  const line = (key: string, child: boolean) => {
+    const now = aggregate(key, from, to, scope)
+    const before = aggregate(key, from - days, from, scope)
+    return (
+      <>
+        <td>
+          {formatMetric(key, now, true)}
+        </td>
+        <td>{formatMetric(key, before, true)}</td>
+        <td className={child ? "an-child-change" : ""}>
+          <ChangeLabel metricKey={key} now={now} before={before} />
+        </td>
+      </>
+    )
+  }
+  return (
+    <section className="card an-table-card">
+      <CardHeading
+        icon="chart"
+        tone="warm"
+        title="Subscription Events"
+        note="Every lifecycle event in the Subscription Event report · Expand a row for its detail"
+      />
+      <div className="an-table-wrap">
+        <table className="an-table an-tree">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Selected Period</th>
+              <th>Previous Period</th>
+              <th>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subscriptionEventTree.map((group) => {
+              const expanded = open.includes(group.key)
+              return (
+                <Fragment key={group.key}>
+                  <tr className="an-tree-parent">
+                    <td>
+                      <button
+                        aria-expanded={expanded}
+                        title={metric(group.key).definition}
+                        onClick={() =>
+                          setOpen(
+                            expanded
+                              ? open.filter((key) => key !== group.key)
+                              : [...open, group.key],
+                          )
+                        }
+                      >
+                        <span className={expanded ? "open" : ""}>
+                          <Icon name="chevron" size={12} />
+                        </span>
+                        {metric(group.key).label}
+                      </button>
+                    </td>
+                    {line(group.key, false)}
+                  </tr>
+                  {expanded &&
+                    group.children.map((key) => (
+                      <tr key={key} className="an-tree-child">
+                        <td title={metric(key).definition}>
+                          {metric(key).label}
+                        </td>
+                        {line(key, true)}
+                      </tr>
+                    ))}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function SubscriptionsTab({ context }: { context: AnalyticsContext }) {
+  const activity = ["activePlans", "paidPlans", "mrr", "churned"]
+  return (
+    <>
+      <TrendSection
+        context={context}
+        metrics={[
+          "activePlans",
+          "paidPlans",
+          "mrr",
+          "netPaidPlans",
+          "planStarts",
+          "conversionToPaid",
+          "churnEvents",
+        ]}
+      />
+      <div className="an-grid">
+        <PlanStateCard context={context} />
+        <BreakdownCard
+          context={context}
+          icon="bell"
+          tone="sand"
+          title="Cancellation Reason"
+          note="Why subscriptions churned"
+          metrics={["churnEvents", "voluntaryChurns", "involuntaryChurns"]}
+          dimension="cancellationReason"
+        />
+      </div>
+      <StatGroup
+        context={context}
+        icon="dashboard"
+        tone="pale"
+        title="Conversion and Billing"
+        metrics={[
+          "conversionToPaid",
+          "trialToPaid",
+          "paidOfferToPaid",
+          "billingIssue",
+          "billingRecoveries",
+          "suspended",
+        ]}
+      />
+      <AnalyticsTable
+        context={context}
+        icon="database"
+        tone="warm"
+        title="Plans"
+        note="Each subscription side by side · Click a column to sort"
+        dimension="subscriptionName"
+        columns={[
+          "activePlans",
+          "paidPlans",
+          "mrr",
+          "planStarts",
+          "churnEvents",
+          "conversionToPaid",
+        ]}
+        shareOf="mrr"
+      />
+      <AnalyticsTable
+        context={context}
+        icon="tag"
+        tone="orange"
+        title="Offers"
+        note="Free trials, introductory, promotional and win-back offers · Click a column to sort"
+        dimension="offerType"
+        columns={[
+          "offerStarts",
+          "offerRenewals",
+          "paidFromOffers",
+          "conversionToPaid",
+          "subscriptionOffers",
+        ]}
+      />
+      <div className="an-grid">
+        <BreakdownCard
+          context={context}
+          icon="tag"
+          tone="pale"
+          title="Offer Pricing"
+          metrics={["offerStarts", "subscriptionOffers", "paidFromOffers"]}
+          dimension="offerPricing"
+        />
+        <BreakdownCard
+          context={context}
+          icon="key"
+          tone="sand"
+          title="Subscription Duration"
+          metrics={activity}
+          dimension="subscriptionDuration"
+        />
+        <BreakdownCard
+          context={context}
+          icon="check"
+          tone="warm"
+          title="Subscription Pricing"
+          metrics={activity}
+          dimension="subscriptionPricing"
+        />
+        <BreakdownCard
+          context={context}
+          icon="team"
+          tone="pale"
+          title="Paid Tenure"
+          note="How long subscribers have been paying"
+          metrics={activity}
+          dimension="paidTenure"
+        />
+        <BreakdownCard
+          context={context}
+          icon="upload"
+          tone="sand"
+          title="Plan Change Type"
+          metrics={["planChanges"]}
+          dimension="planChangeType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="team"
+          tone="orange"
+          title="Family Sharing"
+          metrics={activity}
+          dimension="familySharing"
+        />
+      </div>
+      <SubscriptionEventsCard context={context} />
+    </>
+  )
+}
+
+const cohortViews = {
+  downloadToPaid: {
+    title: "Download to Paid",
+    note: "Share of each download cohort that has paid by day",
+    columns: [1, 7, 14, 28, 35],
+    base: [0.016, 0.031, 0.038, 0.044, 0.048],
+    unit: "Day",
+    rowsBy: "week",
+    scaleMax: 0.06,
+    size: "firstTimeDownloads",
+    format: (value: number) => `${(value * 100).toFixed(1)}%`,
+  },
+  proceedsPerDownload: {
+    title: "Proceeds per Download",
+    note: "Cumulative proceeds per download in each cohort",
+    columns: [1, 7, 14, 28, 35],
+    base: [0.14, 0.31, 0.42, 0.51, 0.58],
+    unit: "Day",
+    rowsBy: "week",
+    scaleMax: 0.7,
+    size: "firstTimeDownloads",
+    format: (value: number) => `$${value.toFixed(2)}`,
+  },
+  paidRetention: {
+    title: "Paid Subscription Retention",
+    note: "Share of each paid start month still subscribed",
+    columns: [1, 2, 3, 6, 12],
+    base: [0.86, 0.74, 0.66, 0.52, 0.38],
+    unit: "Month",
+    rowsBy: "month",
+    scaleMax: 1,
+    size: "paidStarts",
+    format: (value: number) => `${(value * 100).toFixed(0)}%`,
+  },
+} as const
+
+function CohortsTab({ context }: { context: AnalyticsContext }) {
+  const { to, scope } = context
+  const [view, setView] = useState<keyof typeof cohortViews>("downloadToPaid")
+  const config = cohortViews[view]
+  const count = 8
+  const lastMonth = monthOrdinal(dateAt(to - 1))
+  const cohorts =
+    config.rowsBy === "week"
+      ? weeklyCohorts(to, count)
+      : Array.from({ length: count }, (_, row) => {
+          const ordinal = lastMonth - (count - 1 - row)
+          const year = Math.floor(ordinal / 12)
+          const month = ordinal % 12
+          const start = indexOfDate(new Date(year, month, 1))
+          return {
+            start,
+            end: Math.min(
+              indexOfDate(new Date(year, month + 1, 1)),
+              dataLength,
+            ),
+            label: monthLabel(ordinal),
+          }
+        })
+  const dayFactor = config.unit === "Day" ? 1 : 30
+  return (
+    <>
+      <section className="card">
+        <CardHeading
+          icon="chart"
+          tone="warm"
+          title={config.title}
+          note={config.note}
+        >
+          <select
+            className="an-select an-select-small"
+            aria-label="Cohort metric"
+            value={view}
+            onChange={(event) =>
+              setView(event.target.value as keyof typeof cohortViews)
+            }
+          >
+            {Object.entries(cohortViews).map(([key, item]) => (
+              <option key={key} value={key}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+        </CardHeading>
+        <CohortHeatmap
+          context={context}
+          columns={config.columns.map((value) => `${config.unit} ${value}`)}
+          rows={cohorts.map((cohort) => ({
+            label: cohort.label,
+            size: formatUnit(
+              "count",
+              aggregate(config.size, cohort.start, cohort.end, scope),
+            ),
+          }))}
+          cell={(row, column) =>
+            cohorts[row].start + config.columns[column] * dayFactor < dataLength
+              ? config.base[column] * cohortFactor(cohorts[row].start / 7)
+              : null
+          }
+          format={config.format}
+          scaleMax={config.scaleMax}
+        />
+      </section>
+      <div className="an-grid">
+        <RetentionCard context={context} />
+        <StatGroup
+          context={context}
+          icon="tag"
+          tone="orange"
+          title="Monetization Totals"
+          note="For the selected period"
+          metrics={["downloadToPaid1", "downloadToPaid7", "downloadToPaid35", "proceedsPerUser"]}
+        />
+      </div>
+    </>
+  )
+}
+
+function EngagementTab({ context }: { context: AnalyticsContext }) {
+  const usage = ["sessions", "activeDevices", "installations", "deletions"]
+  return (
+    <>
+      <TrendSection
+        context={context}
+        metrics={[
+          "sessions",
+          "activeDevices",
+          "active30",
+          "installations",
+          "deletions",
+          "crashes",
+          "crashRate",
+        ]}
+      />
+      <StatGroup
+        context={context}
+        icon="team"
+        tone="sand"
+        title="Depth and Stickiness"
+        metrics={[
+          "sessionsPerDevice",
+          "sessionDuration",
+          "optInRate",
+          "retention1",
+          "retention7",
+          "retention28",
+        ]}
+      />
+      <div className="an-grid">
+        <RetentionCard context={context} />
+        <BreakdownCard
+          context={context}
+          icon="upload"
+          tone="warm"
+          title="By App Version"
+          metrics={[...usage, "crashes", "crashRate"]}
+          dimension="appVersion"
+        />
+        <BreakdownCard
+          context={context}
+          icon="dashboard"
+          tone="pale"
+          title="By Device"
+          metrics={[...usage, "crashes", "crashRate"]}
+          dimension="device"
+        />
+        <BreakdownCard
+          context={context}
+          icon="settings"
+          tone="sand"
+          title="By Platform Version"
+          metrics={[...usage, "crashes", "crashRate"]}
+          dimension="platformVersion"
+        />
+        <BreakdownCard
+          context={context}
+          icon="apps"
+          tone="pale"
+          title="By Source Type"
+          note="Where active users originally came from"
+          metrics={usage}
+          dimension="sourceType"
+        />
+        <BreakdownCard
+          context={context}
+          icon="store"
+          tone="warm"
+          title="By Region"
+          metrics={usage}
+          dimension="region"
+        />
+      </div>
+    </>
+  )
+}
+
+const perfDeviceFactor: Record<PerfDevice, number> = {
+  "All iPhones": 1,
+  "All iPads": 1.12,
+  Mac: 0.72,
+}
+
+function PerformanceTab({ context }: { context: AnalyticsContext }) {
+  const platform = context.scope.platform
+  const devices: PerfDevice[] =
+    platform === "iOS" ? ["All iPhones", "All iPads"] : ["Mac"]
+  const [picked, setPicked] = useState<PerfDevice>("All iPhones")
+  const device = devices.includes(picked) ? picked : devices[0]
+  const [percentile, setPercentile] = useState<"p50" | "p90">("p50")
+  const factor = perfDeviceFactor[device]
+  const format = (value: number) =>
+    value >= 100 ? value.toFixed(0) : value.toFixed(2).replace(/\.?0+$/, "")
+  const rows = perfMetrics.map((item) => {
+    const points = item[percentile].map((value) => value * factor)
+    const latest = points[points.length - 1]
+    const reference = points.slice(0, -1)
+    const average =
+      reference.reduce((sum, value) => sum + value, 0) / reference.length
+    return { ...item, points, latest, delta: (latest - average) / average }
+  })
+  const regressions = rows.filter((row) => row.delta >= 0.05)
+  const percentileName = percentile === "p50" ? "typical (50th percentile)" : "top (90th percentile)"
+  return (
+    <>
+      <section className="card an-table-card">
+        <CardHeading
+          icon="settings"
+          tone="sand"
+          title="Performance by App Version"
+          note="Compared with the average of the previous four versions"
+        >
+          <div className="an-card-controls">
+            <select
+              className="an-select an-select-small"
+              aria-label="Device"
+              value={device}
+              onChange={(event) => setPicked(event.target.value as PerfDevice)}
+            >
+              {devices.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+            <div className="platform-switch an-view-switch">
+              {(["p50", "p90"] as const).map((item) => (
+                <button
+                  key={item}
+                  className={percentile === item ? "active" : ""}
+                  onClick={() => setPercentile(item)}
+                >
+                  {item === "p50" ? "Typical" : "Top"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </CardHeading>
+        {regressions.length > 0 && (
+          <ul className="an-insights">
+            {regressions.map((row) => (
+              <li key={row.key}>
+                <span>▲ Regression</span>
+                {row.label} for {percentileName} use increased{" "}
+                {(row.delta * 100).toFixed(0)}% to {format(row.latest)} {row.unit}{" "}
+                in {perfVersions[perfVersions.length - 1]} on {device}.
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="an-table-wrap">
+          <table className="an-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Category</th>
+                {perfVersions.map((version) => (
+                  <th key={version}>{version}</th>
+                ))}
+                <th>Trend</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td>{row.label}</td>
+                  <td className="an-cell-muted">{row.category}</td>
+                  {row.points.map((value, index) => (
+                    <td key={perfVersions[index]}>
+                      {format(value)}
+                      {index === row.points.length - 1 && (
+                        <small className="an-unit"> {row.unit}</small>
+                      )}
+                    </td>
+                  ))}
+                  <td className="an-cell-spark">
+                    <Sparkline values={row.points} />
+                  </td>
+                  <td>
+                    <span
+                      className={`an-status ${row.delta >= 0.05 ? "bad" : row.delta <= -0.05 ? "good" : ""}`}
+                    >
+                      {row.delta >= 0.05
+                        ? "▲ Regressed"
+                        : row.delta <= -0.05
+                          ? "▼ Improved"
+                          : "Stable"}{" "}
+                      {row.delta >= 0 ? "+" : ""}
+                      {(row.delta * 100).toFixed(1)}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <StatGroup
+        context={context}
+        icon="bell"
+        tone="warm"
+        title="Stability"
+        metrics={["crashes", "crashRate", "clipCrashes"]}
+      />
+    </>
+  )
+}
+
+function BenchmarksTab({ context }: { context: AnalyticsContext }) {
+  const { from, to, scope } = context
+  const [peer, setPeer] = useState(0)
+  const factor = peerGroupFactor[peer]
+  return (
+    <section className="card an-table-card">
+      <CardHeading
+        icon="team"
+        tone="sand"
+        title="Peer Group Benchmarks"
+        note="Where Fire sits against the 25th, 50th and 75th percentile of similar apps"
+      >
+        <select
+          className="an-select an-select-small"
+          aria-label="Peer group"
+          value={peer}
+          onChange={(event) => setPeer(Number(event.target.value))}
+        >
+          {peerGroups.map((group, index) => (
+            <option key={group} value={index}>
+              {group}
+            </option>
+          ))}
+        </select>
+      </CardHeading>
+      <div className="an-bench-legend">
+        <span>
+          <i className="dot" />
+          Fire
+        </span>
+        <span>
+          <i className="band" />
+          25th–75th percentile
+        </span>
+        <span>
+          <i className="tick" />
+          Median
+        </span>
+      </div>
+      <div className="an-bench">
+        {benchmarkMetrics.map((item) => {
+          const def = metric(item.key)
+          const mine = aggregate(item.key, from, to, scope)
+          const [p25, p50, p75] = [item.p25, item.p50, item.p75].map(
+            (value) => value * factor,
+          )
+          const max = Math.max(p75 * 1.35, mine * 1.12)
+          const at = (value: number) => `${(value / max) * 100}%`
+          const rank =
+            mine >= p75 ? 3 : mine >= p50 ? 2 : mine >= p25 ? 1 : 0
+          const score = def.upIsGood ? rank : 3 - rank
+          const texts = [
+            "Bottom 25% of peers",
+            "Worse than peer median",
+            "Better than peer median",
+            "Top 25% of peers",
+          ]
+          return (
+            <div key={item.key} className="an-bench-row">
+              <div>
+                <span title={def.definition}>{def.label}</span>
+                <strong>{formatMetric(item.key, mine)}</strong>
+              </div>
+              <div
+                className="an-bench-track"
+                {...context.tipProps(
+                  def.label,
+                  `Fire ${formatMetric(item.key, mine)} · 25th ${formatMetric(item.key, p25)} · Median ${formatMetric(item.key, p50)} · 75th ${formatMetric(item.key, p75)}`,
+                )}
+              >
+                <b
+                  className="band"
+                  style={{ left: at(p25), width: `${((p75 - p25) / max) * 100}%` }}
+                />
+                <b className="tick" style={{ left: at(p50) }} />
+                <b className="dot" style={{ left: at(mine) }} />
+              </div>
+              <span className={`an-status ${score >= 2 ? "good" : "bad"}`}>
+                {score >= 2 ? "▲" : "▼"} {texts[score]}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function MetricsTab({
+  context,
+  initial,
+}: {
+  context: AnalyticsContext
+  initial: string
+}) {
+  const { from, to, days, compare, granularity, scope } = context
+  const [key, setKey] = useState(initial)
+  const [groupBy, setGroupBy] = useState<DimensionKey | "">("")
+  const [filterBy, setFilterBy] = useState<DimensionKey | "">("")
+  const [filterValue, setFilterValue] = useState("")
+  const [query, setQuery] = useState("")
+  const top = useRef<HTMLElement>(null)
+  const def = metric(key)
+  const available = def.dims.filter(
+    (dimension) =>
+      !scope.filters[dimension] &&
+      !(dimension === "region" && scope.filters.territory),
+  )
+  const group = groupBy && available.includes(groupBy) ? groupBy : null
+  const filter = filterBy && available.includes(filterBy) ? filterBy : null
+  const filterOptions = filter ? dimensionValues(filter, scope.platform) : []
+  const activeValue =
+    filter && filterOptions.includes(filterValue)
+      ? filterValue
+      : (filterOptions[0] ?? "")
+  const scoped: Scope =
+    filter && filter !== group
+      ? { ...scope, filters: { ...scope.filters, [filter]: activeValue } }
+      : scope
+  const buckets = bucketsFor(from, to, granularity)
+  const labels = bucketLabels(buckets, granularity)
+  const rows = breakdown(key, group ?? "device", from, to, scoped)
+  const chartRows = group ? rows.slice(0, 5) : []
+  const entityColor = (name: string) => {
+    if (!group) return seriesFallback
+    const index = dimensionValues(group, scope.platform)
+      .filter((value) => value !== (dimensions[group] as DimensionDef).unattributed)
+      .indexOf(name)
+    return seriesPalette[index] ?? seriesFallback
+  }
+  const series: ChartSeries[] = group
+    ? chartRows.map((row) => ({
+        label: row.name,
+        tone: "line",
+        color: entityColor(row.name),
+        values: seriesFor(key, buckets, {
+          ...scoped,
+          filters: { ...scoped.filters, [group]: row.name },
+        }),
+      }))
+    : [
+        ...(compare
+          ? [
+              {
+                label: context.previousLabel,
+                tone: "previous" as const,
+                values: seriesFor(
+                  key,
+                  buckets.map(
+                    ([start, end]): Bucket => [start - days, end - days],
+                  ),
+                  scoped,
+                ),
+              },
+            ]
+          : []),
+        {
+          label: context.rangeLabel,
+          tone: "primary" as const,
+          values: seriesFor(key, buckets, scoped),
+        },
+      ]
+  const matches = visibleMetrics().filter((item) =>
+    `${item.label} ${item.group} ${item.report}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  )
+  const counts = (report: string) =>
+    visibleMetrics().filter((item) => item.report === report).length
+  const now = aggregate(key, from, to, scoped)
+  const before = aggregate(key, from - days, from, scoped)
+  return (
+    <>
+      <section className="card an-explorer" ref={top}>
+        <div className="an-explorer-controls">
+          <label>
+            <span>Metric</span>
+            <select
+              className="an-select"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+            >
+              {metricGroups().map(([name, items]) => (
+                <optgroup key={name} label={name}>
+                  {items.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Group by</span>
+            <select
+              className="an-select"
+              value={group ?? ""}
+              onChange={(event) =>
+                setGroupBy(event.target.value as DimensionKey | "")
+              }
+            >
+              <option value="">No grouping</option>
+              {available.map((dimension) => (
+                <option key={dimension} value={dimension}>
+                  {dimensions[dimension].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Filter by</span>
+            <select
+              className="an-select"
+              value={filter ?? ""}
+              onChange={(event) =>
+                setFilterBy(event.target.value as DimensionKey | "")
+              }
+            >
+              <option value="">No filter</option>
+              {available
+                .filter((dimension) => dimension !== group)
+                .map((dimension) => (
+                  <option key={dimension} value={dimension}>
+                    {dimensions[dimension].label}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {filter && filter !== group && (
+            <label>
+              <span>{dimensions[filter].label}</span>
+              <select
+                className="an-select"
+                value={activeValue}
+                onChange={(event) => setFilterValue(event.target.value)}
+              >
+                {filterOptions.map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="an-explorer-head">
+          <div>
+            <strong>{formatMetric(key, now)}</strong>
+            <ChangeLabel metricKey={key} now={now} before={before} />
+          </div>
+          <p>
+            {def.definition} <span>Source: {def.report === "Derived" ? "Calculated from other metrics" : `${def.report} report`}</span>
+          </p>
+        </div>
+        <div className="an-legend an-explorer-legend">
+          {series.map((item) => (
+            <span key={item.label}>
+              <i
+                className={item.tone === "previous" ? "previous" : ""}
+                style={item.color ? { background: item.color } : undefined}
+              />
+              {item.label}
+            </span>
+          ))}
+        </div>
+        <TrendChart
+          axisLabels={labels.axis}
+          tooltipLabels={labels.tooltip}
+          series={series}
+          format={(value) => formatMetric(key, value, true)}
+          axisFormat={(value) => formatMetric(key, value)}
+          label={def.label}
+        />
+        {group && (
+          <div className="an-table-view an-explorer-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>{dimensions[group].label}</th>
+                  <th>{def.label}</th>
+                  <th>Previous Period</th>
+                  <th>Change</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.name}>
+                    <td>
+                      <i
+                        className="an-swatch"
+                        style={{ background: entityColor(row.name) }}
+                      />
+                      {row.name}
+                    </td>
+                    <td>{formatMetric(key, row.value, true)}</td>
+                    <td>{formatMetric(key, row.prior, true)}</td>
+                    <td>
+                      <ChangeLabel
+                        metricKey={key}
+                        now={row.value}
+                        before={row.prior}
+                      />
+                    </td>
+                    <td>
+                      {row.share === null
+                        ? "—"
+                        : `${(row.share * 100).toFixed(1)}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="card an-table-card">
+        <CardHeading
+          icon="metadata"
+          tone="pale"
+          title="Metric Catalog"
+          note={`${visibleMetrics().length} metrics · Select one to chart it`}
+        >
+          <input
+            className="an-search"
+            type="search"
+            placeholder="Search metrics"
+            aria-label="Search metrics"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </CardHeading>
+        <div className="an-table-view an-catalog">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Group</th>
+                <th>Source</th>
+                <th>Dimensions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {matches.map((item) => (
+                <tr key={item.key} className={item.key === key ? "selected" : ""}>
+                  <td>
+                    <button
+                      title={item.definition}
+                      onClick={() => {
+                        setKey(item.key)
+                        top.current?.scrollIntoView({ behavior: "smooth" })
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  </td>
+                  <td>{item.group}</td>
+                  <td>{item.report === "Derived" ? "Calculated" : item.report}</td>
+                  <td>{item.dims.length}</td>
+                </tr>
+              ))}
+              {matches.length === 0 && (
+                <tr>
+                  <td colSpan={4}>No metrics match “{query}”.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card">
+        <CardHeading
+          icon="key"
+          tone="sand"
+          title="App Store Connect API Coverage"
+          note="Reports from the Analytics Reports API, available daily, weekly and monthly"
+        />
+        <div className="an-coverage">
+          {reportCatalog.map((category) => (
+            <div key={category.category}>
+              <h3>{category.title}</h3>
+              <code>{category.category}</code>
+              <ul>
+                {category.reports.map((report) => (
+                  <li key={report}>
+                    <span>{report}</span>
+                    <small>
+                      {counts(report)} {counts(report) === 1 ? "metric" : "metrics"}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <div>
+            <h3>Performance</h3>
+            <code>PERFORMANCE</code>
+            <ul>
+              <li>
+                <span>perfPowerMetrics</span>
+                <small>{perfMetrics.length} metrics</small>
+              </li>
+            </ul>
+            <h3 className="an-coverage-gap">Framework Usage</h3>
+            <code>FRAMEWORK_USAGE</code>
+            <ul>
+              <li>
+                <span>Not shown yet</span>
+                <small>0 metrics</small>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+// ------------------------------------------------------- Custom date range
+
+const lastIndex = dataLength - 1
+
+const rangePresets: { title: string; range: () => [number, number] }[] = [
+  { title: "Last 7 days", range: () => [dataLength - 7, dataLength] },
+  { title: "Last 30 days", range: () => [dataLength - 30, dataLength] },
+  { title: "Last 90 days", range: () => [dataLength - 90, dataLength] },
+  { title: "Last 12 months", range: () => [dataLength - 365, dataLength] },
+  {
+    title: "This month",
+    range: () => [
+      indexOfDate(new Date(dataEnd.getFullYear(), dataEnd.getMonth(), 1)),
+      dataLength,
+    ],
+  },
+  {
+    title: "Last month",
+    range: () => [
+      indexOfDate(new Date(dataEnd.getFullYear(), dataEnd.getMonth() - 1, 1)),
+      indexOfDate(new Date(dataEnd.getFullYear(), dataEnd.getMonth(), 1)),
+    ],
+  },
+  {
+    title: "This year",
+    range: () => [
+      indexOfDate(new Date(dataEnd.getFullYear(), 0, 1)),
+      dataLength,
+    ],
+  },
+  {
+    title: "Last year",
+    range: () => [
+      indexOfDate(new Date(dataEnd.getFullYear() - 1, 0, 1)),
+      indexOfDate(new Date(dataEnd.getFullYear(), 0, 1)),
+    ],
+  },
+]
+
+const presetFor = (from: number, to: number) =>
+  rangePresets.find((preset) => {
+    const [start, end] = preset.range()
+    return start === from && end === to
+  })?.title
+
+function parseDateInput(text: string) {
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text.trim())
+  const date = iso
+    ? new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]))
+    : new Date(text.trim())
+  return Number.isNaN(date.getTime()) ? null : indexOfDate(date)
+}
+
+const earliestMonth = monthOrdinal(dateAt(firstSelectable))
+const latestMonth = monthOrdinal(dataEnd)
+const weekdayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+
+function DateRangePicker({
+  from,
+  to,
+  compare,
+  onApply,
+  onClose,
+}: {
+  from: number
+  to: number
+  compare: boolean
+  onApply: (from: number, to: number) => void
+  onClose: () => void
+}) {
+  // Inclusive day indices; `end` is null while choosing the second date
+  const [start, setStart] = useState(from)
+  const [end, setEnd] = useState<number | null>(to - 1)
+  const [preview, setPreview] = useState<number | null>(null)
+  const [cursor, setCursor] = useState(to - 1)
+  const [focusTick, setFocusTick] = useState(0)
+  const [startText, setStartText] = useState<string | null>(null)
+  const [endText, setEndText] = useState<string | null>(null)
+  const [error, setError] = useState("")
+  const [single] = useState(() => window.innerWidth < 760)
+  const span = single ? 0 : 1
+  const maxView = latestMonth - span
+  const [view, setView] = useState(() =>
+    Math.max(
+      Math.min(monthOrdinal(dateAt(to - 1)) - span, maxView),
+      earliestMonth,
+    ),
+  )
+  const panel = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    panel.current
+      ?.querySelector<HTMLElement>(`[data-day="${cursor}"]`)
+      ?.focus()
+    // Focus only follows the keyboard; the cursor alone must not steal it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTick])
+
+  const showMonthOf = (index: number) => {
+    const ordinal = monthOrdinal(dateAt(index))
+    if (ordinal < view) setView(ordinal)
+    else if (ordinal > view + span) setView(ordinal - span)
+  }
+
+  const moveCursor = (index: number) => {
+    const next = Math.min(Math.max(index, firstSelectable), lastIndex)
+    setCursor(next)
+    showMonthOf(next)
+    setFocusTick((tick) => tick + 1)
+    if (end === null) setPreview(next)
+  }
+
+  const shiftMonth = (months: number) => {
+    const date = dateAt(cursor)
+    const target = new Date(date.getFullYear(), date.getMonth() + months, 1)
+    const lastDay = new Date(
+      target.getFullYear(),
+      target.getMonth() + 1,
+      0,
+    ).getDate()
+    target.setDate(Math.min(date.getDate(), lastDay))
+    moveCursor(indexOfDate(target))
+  }
+
+  const selectDay = (index: number) => {
+    setError("")
+    setStartText(null)
+    setEndText(null)
+    setCursor(index)
+    if (end === null) {
+      setStart(Math.min(start, index))
+      setEnd(Math.max(start, index))
+      setPreview(null)
+    } else {
+      setStart(index)
+      setEnd(null)
+      setPreview(index)
+    }
+  }
+
+  const commitText = (which: "start" | "end") => {
+    const text = which === "start" ? startText : endText
+    if (text === null) return
+    if (which === "end" && text.trim() === "" && end === null) {
+      setEndText(null)
+      return
+    }
+    const index = parseDateInput(text)
+    if (index === null) {
+      setError("Enter a date like Jun 23, 2025.")
+      return
+    }
+    if (index < firstSelectable || index > lastIndex) {
+      setError(
+        `Data is available from ${fullDate(dateAt(firstSelectable))} through ${fullDate(dataEnd)}.`,
+      )
+      return
+    }
+    setError("")
+    setStartText(null)
+    setEndText(null)
+    setPreview(null)
+    setCursor(index)
+    showMonthOf(index)
+    const other = which === "start" ? end : start
+    if (other === null) {
+      setStart(index)
+    } else {
+      setStart(Math.min(index, other))
+      setEnd(Math.max(index, other))
+    }
+  }
+
+  const rangeEnd = end ?? preview
+  const low = rangeEnd === null ? start : Math.min(start, rangeEnd)
+  const high = rangeEnd === null ? start : Math.max(start, rangeEnd)
+  const complete = end !== null
+  const count = high - low + 1
+  const activePreset = complete ? presetFor(low, high + 1) : undefined
+
+  const renderMonth = (ordinal: number, position: number) => {
+    const year = Math.floor(ordinal / 12)
+    const month = ordinal % 12
+    const days = new Date(year, month + 1, 0).getDate()
+    const lead = new Date(year, month, 1).getDay()
+    const cells: (number | null)[] = [
+      ...Array.from({ length: lead }, () => null),
+      ...Array.from({ length: days }, (_, day) =>
+        indexOfDate(new Date(year, month, day + 1)),
+      ),
+    ]
+    while (cells.length % 7) cells.push(null)
+    const weeks = Array.from(
+      { length: cells.length / 7 },
+      (_, week) => cells.slice(week * 7, week * 7 + 7),
+    )
+    return (
+      <div key={ordinal} className="an-month">
+        <div className="an-month-head">
+          {position === 0 && (
+            <button
+              className="an-month-step"
+              aria-label="Previous month"
+              disabled={view <= earliestMonth}
+              onClick={() => setView(view - 1)}
+            >
+              <Icon name="chevron" size={14} />
+            </button>
+          )}
+          <select
+            aria-label={position === 0 ? "First month shown" : "Second month shown"}
+            value={ordinal}
+            onChange={(event) =>
+              setView(
+                Math.min(
+                  Math.max(Number(event.target.value) - position, earliestMonth),
+                  maxView,
+                ),
+              )
+            }
+          >
+            {Array.from(
+              { length: latestMonth - earliestMonth + 1 },
+              (_, offset) => latestMonth - offset,
+            ).map((value) => (
+              <option key={value} value={value}>
+                {monthLabel(value)}
+              </option>
+            ))}
+          </select>
+          {position === span && (
+            <button
+              className="an-month-step next"
+              aria-label="Next month"
+              disabled={view >= maxView}
+              onClick={() => setView(view + 1)}
+            >
+              <Icon name="chevron" size={14} />
+            </button>
+          )}
+        </div>
+        <table
+          role="grid"
+          aria-label={monthLabel(ordinal)}
+          className="an-calendar"
+        >
+          <thead>
+            <tr>
+              {weekdayNames.map((name) => (
+                <th key={name} scope="col">
+                  {name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((week, weekIndex) => (
+              <tr key={weekIndex}>
+                {week.map((index, dayIndex) => {
+                  if (index === null) return <td key={dayIndex} />
+                  const disabled = index < firstSelectable || index > lastIndex
+                  const inRange = index >= low && index <= high
+                  const isStart = index === low
+                  const isEnd = index === high
+                  const classes = [
+                    inRange ? "in-range" : "",
+                    isStart ? "range-start" : "",
+                    isEnd ? "range-end" : "",
+                    !complete && inRange && !(isStart && index === start)
+                      ? "previewing"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                  return (
+                    <td key={index} className={classes}>
+                      <button
+                        data-day={index}
+                        disabled={disabled}
+                        tabIndex={index === cursor ? 0 : -1}
+                        aria-label={fullDate(dateAt(index))}
+                        aria-selected={inRange}
+                        aria-current={index === lastIndex ? "date" : undefined}
+                        onClick={() => selectDay(index)}
+                        onPointerEnter={() => {
+                          if (end === null) setPreview(index)
+                        }}
+                        onFocus={() => {
+                          if (end === null) setPreview(index)
+                        }}
+                      >
+                        {dateAt(index).getDate()}
+                      </button>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={panel}
+      className="an-picker"
+      role="dialog"
+      aria-label="Choose a date range"
+      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Escape") {
+          event.stopPropagation()
+          onClose()
+          return
+        }
+        if (
+          !(event.target instanceof HTMLElement) ||
+          !event.target.dataset.day
+        ) {
+          return
+        }
+        const moves: Record<string, () => void> = {
+          ArrowLeft: () => moveCursor(cursor - 1),
+          ArrowRight: () => moveCursor(cursor + 1),
+          ArrowUp: () => moveCursor(cursor - 7),
+          ArrowDown: () => moveCursor(cursor + 7),
+          Home: () => moveCursor(cursor - dateAt(cursor).getDay()),
+          End: () => moveCursor(cursor + 6 - dateAt(cursor).getDay()),
+          PageUp: () => shiftMonth(-1),
+          PageDown: () => shiftMonth(1),
+        }
+        const move = moves[event.key]
+        if (move) {
+          event.preventDefault()
+          move()
+        }
+      }}
+    >
+      <div className="an-picker-body">
+        <div className="an-picker-presets" role="group" aria-label="Presets">
+          {rangePresets.map((preset) => (
+            <button
+              key={preset.title}
+              className={activePreset === preset.title ? "selected" : ""}
+              onClick={() => {
+                const [presetFrom, presetTo] = preset.range()
+                onApply(presetFrom, presetTo)
+              }}
+            >
+              {preset.title}
+              {activePreset === preset.title && (
+                <Icon name="check" size={15} />
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="an-picker-main">
+          <div className="an-picker-fields">
+            <label>
+              <span>Start</span>
+              <input
+                value={startText ?? fullDate(dateAt(complete ? low : start))}
+                aria-invalid={Boolean(error) && startText !== null}
+                onChange={(event) => setStartText(event.target.value)}
+                onBlur={() => commitText("start")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitText("start")
+                }}
+              />
+            </label>
+            <i aria-hidden="true">–</i>
+            <label className={complete ? "" : "pending"}>
+              <span>End</span>
+              <input
+                value={endText ?? (complete ? fullDate(dateAt(high)) : "")}
+                placeholder="Select a date"
+                aria-invalid={Boolean(error) && endText !== null}
+                onChange={(event) => setEndText(event.target.value)}
+                onBlur={() => commitText("end")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitText("end")
+                }}
+              />
+            </label>
+          </div>
+          <div
+            className="an-months"
+            onPointerLeave={() => {
+              if (end === null) setPreview(null)
+            }}
+          >
+            {Array.from({ length: span + 1 }, (_, position) =>
+              renderMonth(view + position, position),
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="an-picker-footer">
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : complete ? (
+          <p>
+            <strong>{dayCount(count)}</strong>
+            {compare && (
+              <>
+                {" · Compared with "}
+                {rangeText(low - count, low)}
+              </>
+            )}
+          </p>
+        ) : (
+          <p>Select an end date. Data runs through {shortDate(dataEnd)}.</p>
+        )}
+        <div className="an-picker-actions">
+          <button onClick={onClose}>Cancel</button>
+          <button
+            className="primary"
+            disabled={!complete || Boolean(error)}
+            onClick={() => onApply(low, high + 1)}
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const granularityFor = (days: number): Granularity =>
+  days <= 92 ? "day" : days <= 366 ? "week" : "month"
+
+function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
+  const [tab, setTab] = useState<AnalyticsTab>("Overview")
+  const [explorerMetric, setExplorerMetric] = useState("downloads")
+  const [platform, setPlatform] = useState<Platform>("iOS")
+  const [range, setRange] = useState<[number, number]>([
+    dataLength - 30,
+    dataLength,
+  ])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [territory, setTerritory] = useState("")
+  const [device, setDevice] = useState("")
+  const [compare, setCompare] = useState(true)
+  const [granularity, setGranularity] = useState<Granularity>("day")
   const [tip, setTip] = useState<{
     x: number
     y: number
     value: string
     label: string
   } | null>(null)
+  const pickerRoot = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
 
-  const region = analyticsTerritories.find((item) => item.name === territory)
-  const scale = (platform === "iOS" ? 1 : 0.07) * (region?.share ?? 1)
-  const conversionScale =
-    (platform === "iOS" ? 1 : 0.8) *
-    (region ? region.conversion / conversionNorm : 1)
-  const retentionScale =
-    (platform === "iOS" ? 1 : 1.12) * (region?.retention ?? 1)
-  const end = analyticsLength
-  const start = end - days
-  const daily = (key: MetricKey, from: number, to: number) =>
-    Array.from({ length: to - from }, (_, offset) => {
-      const index = from + offset
-      if (key === "conversion") {
-        return (
-          (analyticsRaw.downloads[index] / analyticsRaw.pageViews[index]) *
-          conversionScale
-        )
+  useEffect(() => {
+    if (!pickerOpen) return
+    const dismiss = (event: PointerEvent) => {
+      if (!pickerRoot.current?.contains(event.target as Node)) {
+        setPickerOpen(false)
       }
-      return (
-        analyticsRaw[key][index] *
-        scale *
-        (key === "downloads" ? conversionScale : 1)
-      )
-    })
-  const sum = (series: number[]) =>
-    series.reduce((total, value) => total + value, 0)
-  const total = (key: MetricKey, from: number, to: number) =>
-    key === "conversion"
-      ? (sum(analyticsRaw.downloads.slice(from, to)) /
-          sum(analyticsRaw.pageViews.slice(from, to))) *
-        conversionScale
-      : sum(daily(key, from, to))
-  const current = (key: MetricKey) => total(key, start, end)
-  const prior = (key: MetricKey) => total(key, start - days, start)
-  const selectedMetric =
-    analyticsMetrics.find((item) => item.key === metric) ?? analyticsMetrics[0]
-  const values = daily(metric, start, end)
-  const previous = daily(metric, start - days, start)
-  const dates = analyticsDates.slice(start, end)
-  const events = analyticsEvents
-    .filter((event) => event.index >= start)
-    .map((event) => ({ ...event, index: event.index - start }))
-  const rangeLabel =
-    analyticsRanges.find(([value]) => value === days)?.[1] ?? ""
-  const pageViews = current("pageViews")
-  const downloads = current("downloads")
-  const proceeds = current("proceeds")
-  const funnel = [
-    ["Impressions", current("impressions")],
-    ["Product Page Views", pageViews],
-    ["Downloads", downloads],
-  ] as const
-  const territoryRows = analyticsTerritories
-    .filter((item) => !region || item.name === region.name)
-    .map((item) => {
-      const share = (platform === "iOS" ? 1 : 0.07) * item.share
-      const views = sum(analyticsRaw.pageViews.slice(start, end)) * share
-      const conversion =
-        (sum(analyticsRaw.downloads.slice(start, end)) /
-          sum(analyticsRaw.pageViews.slice(start, end))) *
-        (platform === "iOS" ? 1 : 0.8) *
-        (item.conversion / conversionNorm)
-      return {
-        name: item.name,
-        pageViews: views,
-        conversion,
-        downloads: views * conversion,
-        proceeds: sum(analyticsRaw.proceeds.slice(start, end)) * share,
-      }
-    })
-    .sort((a, b) =>
-      sort.desc ? b[sort.key] - a[sort.key] : a[sort.key] - b[sort.key],
-    )
-  const territoryTotal = territoryRows.reduce(
-    (total, row) => total + row.downloads,
-    0,
-  )
-  const tipProps = (label: string, value: string) => ({
-    tabIndex: 0,
-    onPointerMove: (event: ReactPointerEvent) =>
-      setTip({ x: event.clientX, y: event.clientY, label, value }),
-    onPointerLeave: () => setTip(null),
-    onFocus: (event: ReactFocusEvent<HTMLElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect()
-      setTip({ x: rect.left + rect.width / 2, y: rect.top, label, value })
+    }
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [pickerOpen])
+
+  const [from, to] = range
+  const days = to - from
+  const preset = presetFor(from, to)
+  const rangeLabel = preset ?? rangeText(from, to)
+  const scope: Scope = {
+    platform,
+    filters: {
+      ...(territory ? { territory } : {}),
+      ...(device ? { device } : {}),
     },
-    onBlur: () => setTip(null),
-  })
+  }
+  const context: AnalyticsContext = {
+    from,
+    to,
+    days,
+    compare,
+    granularity,
+    scope,
+    rangeLabel,
+    previousLabel: `Previous ${dayCount(days)}`,
+    openMetric: (key) => {
+      setExplorerMetric(key)
+      setTab("Metrics")
+    },
+    tipProps: (label, value) => ({
+      tabIndex: 0,
+      onPointerMove: (event) =>
+        setTip({ x: event.clientX, y: event.clientY, label, value }),
+      onPointerLeave: () => setTip(null),
+      onFocus: (event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        setTip({ x: rect.left + rect.width / 2, y: rect.top, label, value })
+      },
+      onBlur: () => setTip(null),
+    }),
+  }
+  const regions = [
+    ...new Set(dimensions.territory.values.map((item) => item.region)),
+  ]
 
   return (
     <div className="review-workspace builds-workspace an-workspace">
@@ -4014,7 +6557,10 @@ function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
               <button
                 key={item}
                 className={platform === item ? "active" : ""}
-                onClick={() => setPlatform(item)}
+                onClick={() => {
+                  setPlatform(item)
+                  setDevice("")
+                }}
               >
                 {item}
               </button>
@@ -4022,7 +6568,7 @@ function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
           </div>
           <button
             className="quiet-button"
-            onClick={() => notify("Analytics exported as CSV")}
+            onClick={() => notify(`${tab} analytics exported as CSV`)}
           >
             <Icon name="download" size={14} />
             Export
@@ -4030,44 +6576,62 @@ function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
         </div>
       </div>
 
-      <div className="an-filters">
-        <div className="an-range">
+      <div className="an-tabs" role="tablist" aria-label="Analytics sections">
+        {analyticsTabs.map((item) => (
           <button
-            className="an-filter-button"
-            onClick={() => setRangeMenu(!rangeMenu)}
+            key={item}
+            role="tab"
+            aria-selected={tab === item}
+            className={tab === item ? "active" : ""}
+            onClick={() => {
+              setTip(null)
+              setTab(item)
+            }}
           >
-            <strong>{rangeLabel}</strong>
-            <span>
-              {shortDate(dates[0])} – {shortDate(dates[dates.length - 1])},
-              2025
-            </span>
+            {item}
+          </button>
+        ))}
+      </div>
+
+      <div className="an-filters">
+        <div className="an-range" ref={pickerRoot}>
+          <button
+            ref={trigger}
+            className={`an-filter-button ${pickerOpen ? "open" : ""}`}
+            aria-haspopup="dialog"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen(!pickerOpen)}
+          >
+            <Icon name="calendar" size={15} />
+            {preset ? (
+              <>
+                <strong>{preset}</strong>
+                <span>{rangeText(from, to)}</span>
+              </>
+            ) : (
+              <>
+                <strong>{rangeText(from, to)}</strong>
+                <span>{dayCount(days)}</span>
+              </>
+            )}
             <Icon name="chevron" size={13} />
           </button>
-          {rangeMenu && (
-            <div className="an-menu">
-              {analyticsRanges.map(([value, title]) => (
-                <button
-                  key={value}
-                  className={days === value ? "selected" : ""}
-                  onClick={() => {
-                    setDays(value)
-                    setRangeMenu(false)
-                  }}
-                >
-                  {title}
-                  {days === value && <Icon name="check" size={16} />}
-                </button>
-              ))}
-              <button
-                className="an-menu-custom"
-                onClick={() => {
-                  setRangeMenu(false)
-                  notify("Custom range picker opened")
-                }}
-              >
-                Custom Range…
-              </button>
-            </div>
+          {pickerOpen && (
+            <DateRangePicker
+              from={from}
+              to={to}
+              compare={compare}
+              onClose={() => {
+                setPickerOpen(false)
+                trigger.current?.focus()
+              }}
+              onApply={(nextFrom, nextTo) => {
+                setRange([nextFrom, nextTo])
+                setGranularity(granularityFor(nextTo - nextFrom))
+                setPickerOpen(false)
+                trigger.current?.focus()
+              }}
+            />
           )}
         </div>
         <select
@@ -4076,13 +6640,44 @@ function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
           value={territory}
           onChange={(event) => setTerritory(event.target.value)}
         >
-          <option>All Territories</option>
-          {analyticsTerritories
-            .filter((item) => item.name !== "Other territories")
-            .map((item) => (
-              <option key={item.name}>{item.name}</option>
-            ))}
+          <option value="">All Territories</option>
+          {regions.map((region) => (
+            <optgroup key={region} label={region}>
+              {dimensions.territory.values
+                .filter((item) => item.region === region)
+                .map((item) => (
+                  <option key={item.name}>{item.name}</option>
+                ))}
+            </optgroup>
+          ))}
         </select>
+        <select
+          className="an-select"
+          aria-label="Device"
+          value={device}
+          onChange={(event) => setDevice(event.target.value)}
+        >
+          <option value="">All Devices</option>
+          {dimensionValues("device", platform).map((item) => (
+            <option key={item}>{item}</option>
+          ))}
+        </select>
+        <div
+          className="platform-switch an-view-switch an-granularity"
+          role="group"
+          aria-label="Chart interval"
+        >
+          {(["day", "week", "month"] as const).map((item) => (
+            <button
+              key={item}
+              className={granularity === item ? "active" : ""}
+              disabled={item === "month" && days < 32}
+              onClick={() => setGranularity(item)}
+            >
+              {item.charAt(0).toUpperCase() + item.slice(1)}
+            </button>
+          ))}
+        </div>
         <label className="an-compare">
           <button
             className={`iap-toggle ${compare ? "on" : ""}`}
@@ -4095,331 +6690,27 @@ function AnalyticsPage({ notify }: { notify: (message: string) => void }) {
           </button>
           Compare with previous period
         </label>
-        <span className="an-updated">Data through Jun 23 · Updated 2h ago</span>
+        <span className="an-updated">
+          Data through {shortDate(dataEnd)} · Updated 2h ago
+        </span>
       </div>
 
-      <section className="card an-trend">
-        <div className="an-metrics" role="tablist">
-          {analyticsMetrics.map((item) => {
-            const now = current(item.key)
-            const before = prior(item.key)
-            const change = before ? (now - before) / before : 0
-            const good = change >= 0 === item.upIsGood
-            return (
-              <button
-                key={item.key}
-                role="tab"
-                aria-selected={metric === item.key}
-                className={metric === item.key ? "active" : ""}
-                onClick={() => setMetric(item.key)}
-              >
-                <span>{item.label}</span>
-                <strong>{formatMetric(item.key, now)}</strong>
-                <small className={good ? "good" : "bad"}>
-                  {change >= 0 ? "▲" : "▼"} {Math.abs(change * 100).toFixed(1)}%
-                </small>
-              </button>
-            )
-          })}
-        </div>
-        <div className="an-trend-head">
-          <div className="an-legend">
-            <span>
-              <i />
-              {rangeLabel}
-            </span>
-            {compare && (
-              <span>
-                <i className="previous" />
-                Previous {days} days
-              </span>
-            )}
-          </div>
-          <div className="platform-switch an-view-switch">
-            {(["chart", "table"] as const).map((item) => (
-              <button
-                key={item}
-                className={view === item ? "active" : ""}
-                onClick={() => setView(item)}
-              >
-                {item === "chart" ? "Chart" : "Table"}
-              </button>
-            ))}
-          </div>
-        </div>
-        {view === "chart" ? (
-          <>
-            <TrendChart
-              dates={dates}
-              values={values}
-              previous={compare ? previous : undefined}
-              events={events}
-              format={(value) => formatMetric(metric, value, true)}
-              axisFormat={(value) => formatMetric(metric, value)}
-              label={rangeLabel}
-              previousLabel={`Previous ${days} days`}
-            />
-            {events.length > 0 && (
-              <ol className="an-events">
-                {events.map((event) => (
-                  <li key={event.label}>
-                    <b>{events.indexOf(event) + 1}</b>
-                    {shortDate(dates[event.index])} · {event.label}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </>
-        ) : (
-          <div className="an-table-view">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>{selectedMetric.label}</th>
-                  {compare && <th>Previous Period</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {[...values.keys()].reverse().map((index) => (
-                  <tr key={index}>
-                    <td>{shortDate(dates[index])}</td>
-                    <td>{formatMetric(metric, values[index], true)}</td>
-                    {compare && (
-                      <td>{formatMetric(metric, previous[index], true)}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <div className="an-grid">
-        <section className="card">
-          <div className="card-heading">
-            <div>
-              <span className="card-icon warm">
-                <Icon name="search" size={17} />
-              </span>
-              <h2>Acquisition Funnel</h2>
-              <p>From seeing Fire on the App Store to downloading it</p>
-            </div>
-          </div>
-          <div className="an-funnel">
-            {funnel.map(([title, value], index) => (
-              <div key={title} className="an-funnel-step">
-                <div className="an-bar-label">
-                  <span>{title}</span>
-                  <strong>{formatMetric("downloads", value, true)}</strong>
-                </div>
-                <div
-                  className="an-track"
-                  {...tipProps(title, formatMetric("downloads", value, true))}
-                >
-                  <b style={{ width: `${(value / funnel[0][1]) * 100}%` }} />
-                </div>
-                {index > 0 && (
-                  <small>
-                    {((value / funnel[index - 1][1]) * 100).toFixed(1)}% of{" "}
-                    {funnel[index - 1][0].toLowerCase()}
-                  </small>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-heading">
-            <div>
-              <span className="card-icon pale">
-                <Icon name="apps" size={17} />
-              </span>
-              <h2>Download Sources</h2>
-              <p>Where first-time downloads came from</p>
-            </div>
-          </div>
-          <div className="an-bars">
-            {downloadSources.map(([title, share]) => (
-              <div key={title} className="an-bar-row">
-                <span>{title}</span>
-                <div
-                  className="an-track"
-                  {...tipProps(
-                    title,
-                    `${formatMetric("downloads", downloads * share, true)} downloads`,
-                  )}
-                >
-                  <b style={{ width: `${(share / 0.46) * 100}%` }} />
-                </div>
-                <strong>{(share * 100).toFixed(0)}%</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-heading">
-            <div>
-              <span className="card-icon sand">
-                <Icon name="team" size={17} />
-              </span>
-              <h2>Retention</h2>
-              <p>Share of each weekly install cohort still using Fire</p>
-            </div>
-          </div>
-          <div className="an-heatmap">
-            <span />
-            {retentionDays.map((day) => (
-              <span key={day} className="an-heat-head">
-                Day {day}
-              </span>
-            ))}
-            {retentionCohorts.map(([week, factor], row) => (
-              <Fragment key={week}>
-                <span className="an-heat-week">{week}</span>
-                {retentionDays.map((day, column) => {
-                  const available =
-                    (retentionCohorts.length - 1 - row) * 7 + 7 >= day
-                  const value = Math.min(
-                    retentionBase[column] * factor * retentionScale,
-                    0.99,
-                  )
-                  const step = Math.min(
-                    Math.floor((value / 0.5) * heatRamp.length),
-                    heatRamp.length - 1,
-                  )
-                  return available ? (
-                    <span
-                      key={day}
-                      className="an-heat-cell"
-                      style={{
-                        background: heatRamp[step],
-                        color: step >= 4 ? "#fff" : "#4a3328",
-                      }}
-                      {...tipProps(
-                        `${week} cohort · Day ${day}`,
-                        `${(value * 100).toFixed(1)}% retained`,
-                      )}
-                    >
-                      {(value * 100).toFixed(0)}%
-                    </span>
-                  ) : (
-                    <span key={day} className="an-heat-cell empty">
-                      —
-                    </span>
-                  )
-                })}
-              </Fragment>
-            ))}
-          </div>
-          <div className="an-heat-scale">
-            <span>0%</span>
-            <i>
-              {heatRamp.map((color) => (
-                <b key={color} style={{ background: color }} />
-              ))}
-            </i>
-            <span>50%+</span>
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-heading">
-            <div>
-              <span className="card-icon orange">
-                <Icon name="tag" size={17} />
-              </span>
-              <h2>Proceeds by Product</h2>
-              <p>
-                {formatMetric("proceeds", proceeds, true)} from in-app purchases
-              </p>
-            </div>
-          </div>
-          <div className="an-bars">
-            {proceedsByProduct.map(([title, share]) => (
-              <div key={title} className="an-bar-row">
-                <span>{title}</span>
-                <div
-                  className="an-track"
-                  {...tipProps(title, `${(share * 100).toFixed(0)}% of proceeds`)}
-                >
-                  <b style={{ width: `${(share / 0.38) * 100}%` }} />
-                </div>
-                <strong>{formatMetric("proceeds", proceeds * share)}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="card an-territories">
-        <div className="card-heading">
-          <div>
-            <span className="card-icon pale">
-              <Icon name="store" size={17} />
-            </span>
-            <h2>Territories</h2>
-            <p>Performance by App Store territory · Click a column to sort</p>
-          </div>
-        </div>
-        <table className="an-table">
-          <thead>
-            <tr>
-              <th>Territory</th>
-              {(
-                [
-                  ["pageViews", "Page Views"],
-                  ["conversion", "Conversion"],
-                  ["downloads", "Downloads"],
-                  ["proceeds", "Proceeds"],
-                ] as const
-              ).map(([key, title]) => (
-                <th key={key}>
-                  <button
-                    className={sort.key === key ? "active" : ""}
-                    onClick={() =>
-                      setSort({
-                        key,
-                        desc: sort.key === key ? !sort.desc : true,
-                      })
-                    }
-                  >
-                    {title}
-                    {sort.key === key && (sort.desc ? " ↓" : " ↑")}
-                  </button>
-                </th>
-              ))}
-              <th>Share of Downloads</th>
-            </tr>
-          </thead>
-          <tbody>
-            {territoryRows.map((row) => (
-              <tr key={row.name}>
-                <td>{row.name}</td>
-                <td>{formatMetric("pageViews", row.pageViews, true)}</td>
-                <td>{formatMetric("conversion", row.conversion)}</td>
-                <td>{formatMetric("downloads", row.downloads, true)}</td>
-                <td>{formatMetric("proceeds", row.proceeds, true)}</td>
-                <td>
-                  <span className="an-share">
-                    <i>
-                      <b
-                        style={{
-                          width: `${(row.downloads / territoryTotal) * 100}%`,
-                        }}
-                      />
-                    </i>
-                    {((row.downloads / territoryTotal) * 100).toFixed(1)}%
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      {tab === "Overview" && <OverviewTab context={context} />}
+      {tab === "Acquisition" && <AcquisitionTab context={context} />}
+      {tab === "App Store Features" && <FeaturesTab context={context} />}
+      {tab === "Sales" && <SalesTab context={context} />}
+      {tab === "Subscriptions" && <SubscriptionsTab context={context} />}
+      {tab === "Cohorts" && <CohortsTab context={context} />}
+      {tab === "Engagement" && <EngagementTab context={context} />}
+      {tab === "Performance" && <PerformanceTab context={context} />}
+      {tab === "Benchmarks" && <BenchmarksTab context={context} />}
+      {tab === "Metrics" && (
+        <MetricsTab
+          key={explorerMetric}
+          context={context}
+          initial={explorerMetric}
+        />
+      )}
 
       {tip && (
         <div className="an-float-tip" style={{ left: tip.x, top: tip.y }}>
@@ -4487,7 +6778,7 @@ export default function App() {
           </button>
           <nav>
             <p>Workspace</p>
-            {navigation.slice(0, 7).map(([label, icon]) => (
+            {navigation.slice(0, 6).map(([label, icon]) => (
               <button
                 key={label}
                 className={active === label ? "active" : ""}
@@ -4498,7 +6789,7 @@ export default function App() {
               </button>
             ))}
             <p>Management</p>
-            {navigation.slice(7).map(([label, icon]) => (
+            {navigation.slice(6).map(([label, icon]) => (
               <button
                 key={label}
                 className={active === label ? "active" : ""}
