@@ -42,7 +42,7 @@ import {
   type Unit,
 } from "./analyticsData"
 
-type IconName = "apps" | "bell" | "calendar" | "chart" | "check" | "chevron" | "cloud" | "dashboard" | "database" | "download" | "key" | "metadata" | "more" | "plus" | "search" | "settings" | "store" | "tag" | "team" | "upload"
+type IconName = "apps" | "bell" | "calendar" | "chart" | "check" | "chevron" | "cloud" | "dashboard" | "database" | "download" | "globe" | "key" | "metadata" | "more" | "plus" | "search" | "settings" | "store" | "tag" | "team" | "upload"
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -101,6 +101,13 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
         <path d="M12 3v12" />
         <path d="m7 10 5 5 5-5" />
         <path d="M5 21h14" />
+      </>
+    ),
+    globe: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18" />
+        <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z" />
       </>
     ),
     key: (
@@ -6733,9 +6740,38 @@ function EmptyPage({ title }: { title: string }) {
   )
 }
 
+const profileTones = {
+  Sand: { background: "#f1c59e", color: "#81411f" },
+  Orange: { background: "#fde0d1", color: "#b7451e" },
+  Blue: { background: "#d9e8fa", color: "#1f5fb0" },
+  Green: { background: "#d6f0e1", color: "#1e7045" },
+  Violet: { background: "#e4e0fb", color: "#4f3fc0" },
+  Rose: { background: "#fbdfe9", color: "#b02a62" },
+  Graphite: { background: "#e6e3df", color: "#4e4944" },
+}
+
+type ProfileTone = keyof typeof profileTones
+type ProfileSymbol = "initials" | IconName
+type ProfileGlyph = ProfileSymbol | "image"
+
+const profileGlyphs: [ProfileSymbol, string][] = [
+  ["initials", "Initials"],
+  ["store", "Store"],
+  ["apps", "Apps"],
+  ["team", "Team"],
+  ["tag", "Tag"],
+  ["cloud", "Cloud"],
+  ["chart", "Chart"],
+  ["globe", "Globe"],
+]
+
 type ApiProfile = {
   id: string
   name: string
+  glyph: ProfileGlyph
+  tone: ProfileTone
+  // Data URL of an uploaded icon, used when glyph is "image"
+  image?: string
   team: string
   apps: number
   keyType: "team" | "individual"
@@ -6749,6 +6785,8 @@ const seedProfiles: ApiProfile[] = [
   {
     id: "acme",
     name: "Alex Lin",
+    glyph: "initials",
+    tone: "Sand",
     team: "Acme Studio",
     apps: 8,
     keyType: "team",
@@ -6759,6 +6797,8 @@ const seedProfiles: ApiProfile[] = [
   {
     id: "northwind",
     name: "Northwind Apps",
+    glyph: "store",
+    tone: "Blue",
     team: "Northwind Apps",
     apps: 2,
     keyType: "individual",
@@ -6775,6 +6815,57 @@ const profileInitials = (name: string) =>
     .map((word) => word.charAt(0).toUpperCase())
     .join("")
 
+const profileImageTypes = ["image/png", "image/jpeg", "image/webp"]
+const profileImageMaxBytes = 2 * 1024 * 1024
+
+// Resolves with a data URL, or rejects with a message the dialog can show
+function readProfileImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (!profileImageTypes.includes(file.type)) {
+      reject(new Error("Choose a PNG, JPEG or WebP image."))
+      return
+    }
+    if (file.size > profileImageMaxBytes) {
+      reject(new Error("Choose an image of 2 MB or less."))
+      return
+    }
+    const unreadable = () => reject(new Error("This image couldn't be read."))
+    const reader = new FileReader()
+    reader.onerror = unreadable
+    reader.onload = () => {
+      const url = String(reader.result)
+      // Decode it now so a damaged file can't become a broken avatar
+      const image = new Image()
+      image.onload = () => resolve(url)
+      image.onerror = unreadable
+      image.src = url
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+const profileIconStyle = (tone: ProfileTone, glyph: ProfileGlyph) =>
+  glyph === "image" ? { background: "#fff" } : profileTones[tone]
+
+function ProfileGlyphMark({
+  name,
+  glyph,
+  image,
+  size = 15,
+}: {
+  name: string
+  glyph: ProfileGlyph
+  image?: string
+  size?: number
+}) {
+  if (glyph === "image") return <img src={image} alt="" />
+  return glyph === "initials" ? (
+    <>{profileInitials(name) || "?"}</>
+  ) : (
+    <Icon name={glyph} size={size} />
+  )
+}
+
 function AddProfileDialog({
   profiles,
   onAdd,
@@ -6785,6 +6876,11 @@ function AddProfileDialog({
   onClose: () => void
 }) {
   const [name, setName] = useState("")
+  const [glyph, setGlyph] = useState<ProfileGlyph>("initials")
+  const [tone, setTone] = useState<ProfileTone>("Sand")
+  const [image, setImage] = useState("")
+  const [imageName, setImageName] = useState("")
+  const [imageError, setImageError] = useState("")
   const [keyType, setKeyType] = useState<ApiProfile["keyType"]>("team")
   const [issuerId, setIssuerId] = useState("")
   const [keyId, setKeyId] = useState("")
@@ -6804,6 +6900,25 @@ function AddProfileDialog({
     // The dialog only needs this once, for as long as it is open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const chooseImage = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      setImage(await readProfileImage(file))
+      setImageName(file.name)
+      setImageError("")
+      setGlyph("image")
+    } catch (error) {
+      setImageError((error as Error).message)
+    }
+  }
+
+  const removeImage = () => {
+    setImage("")
+    setImageName("")
+    setImageError("")
+    if (glyph === "image") setGlyph("initials")
+  }
 
   const chooseFile = (file: File | undefined) => {
     if (!file) return
@@ -6855,6 +6970,9 @@ function AddProfileDialog({
     onAdd({
       id: `profile-${keyId}`,
       name: trimmedName,
+      glyph,
+      tone,
+      image: glyph === "image" ? image : undefined,
       team: trimmedName,
       apps: 0,
       keyType,
@@ -6913,6 +7031,115 @@ function AddProfileDialog({
             />
             {show(errors.name)}
           </label>
+          <div className="profile-field">
+            <span>Icon</span>
+            <div className="profile-icon-setting">
+              <i
+                className="profile-icon-preview"
+                style={profileIconStyle(tone, glyph)}
+                aria-hidden="true"
+              >
+                <ProfileGlyphMark
+                  name={name}
+                  glyph={glyph}
+                  image={image}
+                  size={24}
+                />
+              </i>
+              <div>
+                <div
+                  className="profile-glyphs"
+                  role="group"
+                  aria-label="Icon symbol"
+                >
+                  {profileGlyphs.map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={glyph === value}
+                      className={glyph === value ? "selected" : ""}
+                      onClick={() => setGlyph(value)}
+                    >
+                      {value === "initials" ? (
+                        "Aa"
+                      ) : (
+                        <Icon name={value} size={16} />
+                      )}
+                    </button>
+                  ))}
+                  {image ? (
+                    <button
+                      type="button"
+                      title={imageName}
+                      aria-label={`Uploaded image, ${imageName}`}
+                      aria-pressed={glyph === "image"}
+                      className={`profile-glyph-image ${glyph === "image" ? "selected" : ""}`}
+                      onClick={() => setGlyph("image")}
+                    >
+                      <img src={image} alt="" />
+                    </button>
+                  ) : (
+                    <label className="profile-glyph-upload" title="Upload image">
+                      <input
+                        type="file"
+                        aria-label="Upload image"
+                        accept={profileImageTypes.join(",")}
+                        onChange={(event) => {
+                          void chooseImage(event.target.files?.[0])
+                          event.target.value = ""
+                        }}
+                      />
+                      <Icon name="upload" size={16} />
+                    </label>
+                  )}
+                </div>
+                {glyph !== "image" && (
+                  <div
+                    className="profile-tones"
+                    role="group"
+                    aria-label="Icon color"
+                  >
+                    {(Object.keys(profileTones) as ProfileTone[]).map(
+                      (value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          title={value}
+                          aria-label={value}
+                          aria-pressed={tone === value}
+                          className={tone === value ? "selected" : ""}
+                          style={profileTones[value]}
+                          onClick={() => setTone(value)}
+                        >
+                          {tone === value && <Icon name="check" size={13} />}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                )}
+                {image ? (
+                  <div className="profile-image-file">
+                    <span title={imageName}>{imageName}</span>
+                    <button type="button" onClick={removeImage}>
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <small className="profile-image-hint">
+                    Upload a PNG, JPEG or WebP of up to 2 MB. Square images
+                    work best.
+                  </small>
+                )}
+                {imageError && (
+                  <small className="profile-field-error" role="alert">
+                    {imageError}
+                  </small>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="profile-field">
             <span id="profile-key-type">Key Type</span>
             <div
@@ -7025,16 +7252,198 @@ function AddProfileDialog({
   )
 }
 
+const uiLanguages = [
+  { code: "en", name: "English" },
+  { code: "zh-Hans", name: "简体中文" },
+  { code: "zh-Hant", name: "繁體中文" },
+  { code: "ja", name: "日本語" },
+] as const
+
+type UiLanguage = (typeof uiLanguages)[number]["code"]
+type Translate = (text: string) => string
+
+// Sidebar and profile menu text, keyed by the English source string
+const shellText: Record<Exclude<UiLanguage, "en">, Record<string, string>> = {
+  "zh-Hans": {
+    "App Store Manager": "App Store 管理器",
+    Workspace: "工作区",
+    Management: "管理",
+    Settings: "设置",
+    Language: "语言",
+    Dashboard: "仪表板",
+    Metadata: "元数据",
+    "App Review": "App 审核",
+    Builds: "构建版本",
+    "In-App Purchases": "App 内购买项目",
+    Analytics: "分析",
+    "Users & Access": "用户和访问",
+    "API connected": "API 已连接",
+    "Switch Profile": "切换配置文件",
+    "Add Profile": "添加配置文件",
+    "Connect another API key": "连接其他 API 密钥",
+    "Team key": "团队密钥",
+    "Individual key": "个人密钥",
+    app: "个 App",
+    apps: "个 App",
+  },
+  "zh-Hant": {
+    "App Store Manager": "App Store 管理器",
+    Workspace: "工作區",
+    Management: "管理",
+    Settings: "設定",
+    Language: "語言",
+    Dashboard: "儀表板",
+    Metadata: "中繼資料",
+    "App Review": "App 審查",
+    Builds: "建置版本",
+    "In-App Purchases": "App 內購買項目",
+    Analytics: "分析",
+    "Users & Access": "使用者與存取權",
+    "API connected": "API 已連線",
+    "Switch Profile": "切換設定檔",
+    "Add Profile": "新增設定檔",
+    "Connect another API key": "連接其他 API 金鑰",
+    "Team key": "團隊金鑰",
+    "Individual key": "個人金鑰",
+    app: "個 App",
+    apps: "個 App",
+  },
+  ja: {
+    "App Store Manager": "App Store マネージャー",
+    Workspace: "ワークスペース",
+    Management: "管理",
+    Settings: "設定",
+    Language: "言語",
+    Dashboard: "ダッシュボード",
+    Metadata: "メタデータ",
+    "App Review": "App審査",
+    Builds: "ビルド",
+    "In-App Purchases": "App内課金",
+    Analytics: "アナリティクス",
+    "Users & Access": "ユーザとアクセス",
+    "API connected": "API接続済み",
+    "Switch Profile": "プロファイルを切り替え",
+    "Add Profile": "プロファイルを追加",
+    "Connect another API key": "別のAPIキーを接続",
+    "Team key": "チームキー",
+    "Individual key": "個人キー",
+    app: "個のアプリ",
+    apps: "個のアプリ",
+  },
+}
+
+const uiLanguageKey = "fire.uiLanguage"
+
+function savedUiLanguage(): UiLanguage {
+  try {
+    const saved = window.localStorage.getItem(uiLanguageKey)
+    return uiLanguages.find((item) => item.code === saved)?.code ?? "en"
+  } catch {
+    return "en"
+  }
+}
+
+function moveMenuFocus(menu: HTMLElement | null, step: number) {
+  const items = [...(menu?.querySelectorAll<HTMLElement>("button") ?? [])]
+  const index = items.indexOf(document.activeElement as HTMLElement)
+  items[(index + step + items.length) % items.length]?.focus()
+}
+
+// Renders as direct children of the nav so the row keeps the nav item styling
+function LanguagePicker({
+  value,
+  onChange,
+  t,
+}: {
+  value: UiLanguage
+  onChange: (code: UiLanguage) => void
+  t: Translate
+}) {
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const current = uiLanguages.find((item) => item.code === value)
+
+  useEffect(() => {
+    if (!open) return
+    menu.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus()
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element
+      if (!target.closest('[data-menu-root="language"]')) setOpen(false)
+    }
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [open])
+
+  const closeMenu = () => {
+    setOpen(false)
+    trigger.current?.focus()
+  }
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        data-menu-root="language"
+        className={open ? "menu-open" : ""}
+        aria-label={`${t("Language")}: ${current?.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="globe" />
+        <span>{t("Language")}</span>
+        <span className="nav-value">{current?.name}</span>
+      </button>
+      {open && (
+        <div
+          ref={menu}
+          data-menu-root="language"
+          className="language-menu"
+          role="menu"
+          aria-label={t("Language")}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") closeMenu()
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault()
+              moveMenuFocus(menu.current, event.key === "ArrowDown" ? 1 : -1)
+            }
+          }}
+        >
+          {uiLanguages.map((item) => (
+            <button
+              key={item.code}
+              lang={item.code}
+              role="menuitemradio"
+              aria-checked={item.code === value}
+              className={item.code === value ? "selected" : ""}
+              onClick={() => {
+                onChange(item.code)
+                closeMenu()
+              }}
+            >
+              {item.name}
+              {item.code === value && <Icon name="check" size={15} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 function ProfileSwitcher({
   profiles,
   activeId,
   onSwitch,
   onAdd,
+  t,
 }: {
   profiles: ApiProfile[]
   activeId: string
   onSwitch: (id: string) => void
   onAdd: (profile: ApiProfile) => void
+  t: Translate
 }) {
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -7060,14 +7469,6 @@ function ProfileSwitcher({
     moreButton.current?.focus()
   }
 
-  const moveFocus = (step: number) => {
-    const items = [
-      ...(menu.current?.querySelectorAll<HTMLElement>("button") ?? []),
-    ]
-    const index = items.indexOf(document.activeElement as HTMLElement)
-    items[(index + step + items.length) % items.length]?.focus()
-  }
-
   return (
     <>
       <div className="profile-area" ref={area}>
@@ -7081,11 +7482,11 @@ function ProfileSwitcher({
               if (event.key === "Escape") closeMenu()
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault()
-                moveFocus(event.key === "ArrowDown" ? 1 : -1)
+                moveMenuFocus(menu.current, event.key === "ArrowDown" ? 1 : -1)
               }
             }}
           >
-            <p>Switch Profile</p>
+            <p>{t("Switch Profile")}</p>
             <div className="profile-menu-list">
               {profiles.map((item) => (
                 <button
@@ -7098,13 +7499,20 @@ function ProfileSwitcher({
                     if (item.id !== current.id) onSwitch(item.id)
                   }}
                 >
-                  <i className="profile-menu-avatar">
-                    {profileInitials(item.name)}
+                  <i
+                    className="profile-menu-avatar"
+                    style={profileIconStyle(item.tone, item.glyph)}
+                  >
+                    <ProfileGlyphMark
+                      name={item.name}
+                      glyph={item.glyph}
+                      image={item.image}
+                    />
                   </i>
                   <span>
                     <strong>{item.name}</strong>
                     <small>
-                      {item.keyType === "team" ? "Team key" : "Individual key"}{" "}
+                      {t(item.keyType === "team" ? "Team key" : "Individual key")}{" "}
                       · {item.keyId}
                     </small>
                   </span>
@@ -7124,8 +7532,8 @@ function ProfileSwitcher({
                 <Icon name="plus" size={15} />
               </i>
               <span>
-                <strong>Add Profile</strong>
-                <small>Connect another API key</small>
+                <strong>{t("Add Profile")}</strong>
+                <small>{t("Connect another API key")}</small>
               </span>
             </button>
           </div>
@@ -7136,14 +7544,19 @@ function ProfileSwitcher({
             aria-label="Open profile menu"
             aria-haspopup="menu"
             aria-expanded={open}
+            style={profileIconStyle(current.tone, current.glyph)}
             onClick={() => setOpen(!open)}
           >
-            {profileInitials(current.name)}
+            <ProfileGlyphMark
+              name={current.name}
+              glyph={current.glyph}
+              image={current.image}
+            />
           </button>
           <div>
             <strong title={current.name}>{current.name}</strong>
             <span>
-              <i /> API connected
+              <i /> {t("API connected")}
             </span>
           </div>
           <button
@@ -7180,6 +7593,7 @@ export default function App() {
   const [active, setActive] = useState("Metadata")
   const [profiles, setProfiles] = useState(seedProfiles)
   const [profileId, setProfileId] = useState(seedProfiles[0].id)
+  const [uiLanguage, setUiLanguage] = useState(savedUiLanguage)
   const [toast, setToast] = useState("")
   const [language, setLanguage] = useState("English")
   const [localeMenu, setLocaleMenu] = useState(false)
@@ -7191,6 +7605,17 @@ export default function App() {
   }
   const currentProfile =
     profiles.find((item) => item.id === profileId) ?? profiles[0]
+  const t: Translate = (text) =>
+    uiLanguage === "en" ? text : (shellText[uiLanguage][text] ?? text)
+
+  useEffect(() => {
+    document.documentElement.lang = uiLanguage
+    try {
+      window.localStorage.setItem(uiLanguageKey, uiLanguage)
+    } catch {
+      // The choice still applies for this visit when storage is unavailable
+    }
+  }, [uiLanguage])
 
   return (
     <div className="stage">
@@ -7200,7 +7625,7 @@ export default function App() {
             <div className="brand-symbol">F</div>
             <div>
               <strong>Fire</strong>
-              <span>App Store Manager</span>
+              <span>{t("App Store Manager")}</span>
             </div>
           </div>
           <button className="account-switch">
@@ -7211,13 +7636,13 @@ export default function App() {
               <strong>{currentProfile.team}</strong>
               <small>
                 {currentProfile.apps}{" "}
-                {currentProfile.apps === 1 ? "app" : "apps"}
+                {t(currentProfile.apps === 1 ? "app" : "apps")}
               </small>
             </span>
             <Icon name="chevron" size={14} />
           </button>
           <nav>
-            <p>Workspace</p>
+            <p>{t("Workspace")}</p>
             {navigation.slice(0, 6).map(([label, icon]) => (
               <button
                 key={label}
@@ -7225,10 +7650,10 @@ export default function App() {
                 onClick={() => setActive(label)}
               >
                 <Icon name={icon} />
-                <span>{label}</span>
+                <span>{t(label)}</span>
               </button>
             ))}
-            <p>Management</p>
+            <p>{t("Management")}</p>
             {navigation.slice(6).map(([label, icon]) => (
               <button
                 key={label}
@@ -7236,11 +7661,18 @@ export default function App() {
                 onClick={() => setActive(label)}
               >
                 <Icon name={icon} />
-                <span>{label}</span>
+                <span>{t(label)}</span>
               </button>
             ))}
+            <p>{t("Settings")}</p>
+            <LanguagePicker
+              value={uiLanguage}
+              onChange={setUiLanguage}
+              t={t}
+            />
           </nav>
           <ProfileSwitcher
+            t={t}
             profiles={profiles}
             activeId={currentProfile.id}
             onSwitch={(id) => {
