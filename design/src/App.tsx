@@ -6743,8 +6743,453 @@ function EmptyPage({ title }: { title: string }) {
   )
 }
 
+type ApiProfile = {
+  id: string
+  name: string
+  team: string
+  apps: number
+  keyType: "team" | "individual"
+  keyId: string
+  issuerId?: string
+  // Only the file name is kept; the key's contents are never read here
+  keyFile: string
+}
+
+const seedProfiles: ApiProfile[] = [
+  {
+    id: "acme",
+    name: "Alex Lin",
+    team: "Acme Studio",
+    apps: 8,
+    keyType: "team",
+    keyId: "7XK2M9QPLA",
+    issuerId: "69a6de70-03db-47e3-e053-5b8c7c11a4d1",
+    keyFile: "AuthKey_7XK2M9QPLA.p8",
+  },
+  {
+    id: "northwind",
+    name: "Northwind Apps",
+    team: "Northwind Apps",
+    apps: 2,
+    keyType: "individual",
+    keyId: "R4T8N2WZ6C",
+    keyFile: "AuthKey_R4T8N2WZ6C.p8",
+  },
+]
+
+const profileInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("")
+
+function AddProfileDialog({
+  profiles,
+  onAdd,
+  onClose,
+}: {
+  profiles: ApiProfile[]
+  onAdd: (profile: ApiProfile) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState("")
+  const [keyType, setKeyType] = useState<ApiProfile["keyType"]>("team")
+  const [issuerId, setIssuerId] = useState("")
+  const [keyId, setKeyId] = useState("")
+  const [keyFile, setKeyFile] = useState("")
+  const [fileError, setFileError] = useState("")
+  const [dragging, setDragging] = useState(false)
+  const [attempted, setAttempted] = useState(false)
+  const nameInput = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    nameInput.current?.focus()
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", closeOnEscape)
+    return () => document.removeEventListener("keydown", closeOnEscape)
+    // The dialog only needs this once, for as long as it is open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const chooseFile = (file: File | undefined) => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith(".p8")) {
+      setKeyFile("")
+      setFileError("Choose the .p8 file you downloaded from App Store Connect.")
+      return
+    }
+    setFileError("")
+    setKeyFile(file.name)
+    // Apple names the download AuthKey_<KEY ID>.p8
+    const match = /^AuthKey_([A-Za-z0-9]{10})\.p8$/i.exec(file.name)
+    if (match && !keyId) setKeyId(match[1].toUpperCase())
+  }
+
+  const trimmedName = name.trim()
+  const trimmedIssuer = issuerId.trim()
+  const errors = {
+    name: !trimmedName
+      ? "Enter a profile name."
+      : profiles.some(
+            (item) => item.name.toLowerCase() === trimmedName.toLowerCase(),
+          )
+        ? "A profile with this name already exists."
+        : "",
+    issuerId:
+      keyType === "team" &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        trimmedIssuer,
+      )
+        ? "Enter the Issuer ID shown above your team keys."
+        : "",
+    keyId: !/^[A-Z0-9]{10}$/.test(keyId)
+      ? "Key IDs have 10 letters and numbers."
+      : profiles.some((item) => item.keyId === keyId)
+        ? "This API key is already in another profile."
+        : "",
+    keyFile: keyFile ? "" : fileError || "Choose the private key file.",
+  }
+  const invalid = Object.values(errors).some(Boolean)
+  const show = (error: string) =>
+    attempted && error ? (
+      <small className="profile-field-error">{error}</small>
+    ) : null
+
+  const submit = () => {
+    setAttempted(true)
+    if (invalid) return
+    onAdd({
+      id: `profile-${keyId}`,
+      name: trimmedName,
+      team: trimmedName,
+      apps: 0,
+      keyType,
+      keyId,
+      issuerId: keyType === "team" ? trimmedIssuer : undefined,
+      keyFile,
+    })
+  }
+
+  return (
+    <div
+      className="attachment-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <form
+        className="attachment-modal profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-profile-title"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          submit()
+        }}
+      >
+        <div className="attachment-modal-head">
+          <div>
+            <h2 id="add-profile-title">Add Profile</h2>
+            <p>Connect another App Store Connect API key</p>
+          </div>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close add profile"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="profile-form">
+          <p className="profile-form-hint">
+            Create keys in App Store Connect under Users and Access, then
+            Integrations. Apple lets you download a private key only once.
+          </p>
+          <label>
+            <span>Profile Name</span>
+            <input
+              ref={nameInput}
+              value={name}
+              placeholder="Acme Studio"
+              aria-invalid={attempted && Boolean(errors.name)}
+              onChange={(event) => setName(event.target.value)}
+            />
+            {show(errors.name)}
+          </label>
+          <div className="profile-field">
+            <span id="profile-key-type">Key Type</span>
+            <div
+              className="platform-switch"
+              role="group"
+              aria-labelledby="profile-key-type"
+            >
+              {(["team", "individual"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={keyType === item ? "active" : ""}
+                  aria-pressed={keyType === item}
+                  onClick={() => setKeyType(item)}
+                >
+                  {item === "team" ? "Team" : "Individual"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {keyType === "team" && (
+            <label>
+              <span>Issuer ID</span>
+              <input
+                className="profile-mono"
+                value={issuerId}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                spellCheck={false}
+                autoComplete="off"
+                aria-invalid={attempted && Boolean(errors.issuerId)}
+                onChange={(event) => setIssuerId(event.target.value)}
+              />
+              {show(errors.issuerId)}
+            </label>
+          )}
+          <label>
+            <span>Key ID</span>
+            <input
+              className="profile-mono"
+              value={keyId}
+              placeholder="10 characters"
+              maxLength={10}
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={attempted && Boolean(errors.keyId)}
+              onChange={(event) =>
+                setKeyId(event.target.value.trim().toUpperCase())
+              }
+            />
+            {show(errors.keyId)}
+          </label>
+          <div className="profile-field">
+            <span>Private Key</span>
+            {keyFile ? (
+              <div className="profile-file">
+                <Icon name="key" size={16} />
+                <strong>{keyFile}</strong>
+                <button type="button" onClick={() => setKeyFile("")}>
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <label
+                className={`profile-drop ${dragging ? "dragging" : ""}`}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  setDragging(true)
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  setDragging(false)
+                  chooseFile(event.dataTransfer.files[0])
+                }}
+              >
+                <input
+                  type="file"
+                  accept=".p8"
+                  onChange={(event) => {
+                    chooseFile(event.target.files?.[0])
+                    event.target.value = ""
+                  }}
+                />
+                <Icon name="upload" size={17} />
+                <strong>Choose a .p8 file</strong>
+                <small>or drop it here</small>
+              </label>
+            )}
+            {fileError && !attempted ? (
+              <small className="profile-field-error">{fileError}</small>
+            ) : (
+              show(errors.keyFile)
+            )}
+          </div>
+        </div>
+
+        <div className="iap-modal-footer">
+          <span>The new profile becomes active after you add it.</span>
+          <div>
+            <button type="button" className="quiet-button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="accent-button">
+              Add Profile
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function ProfileSwitcher({
+  profiles,
+  activeId,
+  onSwitch,
+  onAdd,
+}: {
+  profiles: ApiProfile[]
+  activeId: string
+  onSwitch: (id: string) => void
+  onAdd: (profile: ApiProfile) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const area = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const moreButton = useRef<HTMLButtonElement>(null)
+  const current = profiles.find((item) => item.id === activeId) ?? profiles[0]
+
+  useEffect(() => {
+    if (!open) return
+    menu.current
+      ?.querySelector<HTMLElement>('[aria-checked="true"]')
+      ?.focus()
+    const dismiss = (event: PointerEvent) => {
+      if (!area.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [open])
+
+  const closeMenu = () => {
+    setOpen(false)
+    moreButton.current?.focus()
+  }
+
+  const moveFocus = (step: number) => {
+    const items = [
+      ...(menu.current?.querySelectorAll<HTMLElement>("button") ?? []),
+    ]
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    items[(index + step + items.length) % items.length]?.focus()
+  }
+
+  return (
+    <>
+      <div className="profile-area" ref={area}>
+        {open && (
+          <div
+            ref={menu}
+            className="profile-menu"
+            role="menu"
+            aria-label="Profiles"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeMenu()
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault()
+                moveFocus(event.key === "ArrowDown" ? 1 : -1)
+              }
+            }}
+          >
+            <p>Switch Profile</p>
+            <div className="profile-menu-list">
+              {profiles.map((item) => (
+                <button
+                  key={item.id}
+                  role="menuitemradio"
+                  aria-checked={item.id === current.id}
+                  className={item.id === current.id ? "selected" : ""}
+                  onClick={() => {
+                    closeMenu()
+                    if (item.id !== current.id) onSwitch(item.id)
+                  }}
+                >
+                  <i className="profile-menu-avatar">
+                    {profileInitials(item.name)}
+                  </i>
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      {item.keyType === "team" ? "Team key" : "Individual key"}{" "}
+                      · {item.keyId}
+                    </small>
+                  </span>
+                  {item.id === current.id && <Icon name="check" size={15} />}
+                </button>
+              ))}
+            </div>
+            <button
+              role="menuitem"
+              className="profile-menu-add"
+              onClick={() => {
+                setOpen(false)
+                setAdding(true)
+              }}
+            >
+              <i>
+                <Icon name="plus" size={15} />
+              </i>
+              <span>
+                <strong>Add Profile</strong>
+                <small>Connect another API key</small>
+              </span>
+            </button>
+          </div>
+        )}
+        <div className="profile">
+          <button
+            className="profile-avatar"
+            aria-label="Open profile menu"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {profileInitials(current.name)}
+          </button>
+          <div>
+            <strong title={current.name}>{current.name}</strong>
+            <span>
+              <i /> API connected
+            </span>
+          </div>
+          <button
+            ref={moreButton}
+            className={`profile-more ${open ? "open" : ""}`}
+            aria-label="Open profile menu"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <Icon name="more" />
+          </button>
+        </div>
+      </div>
+      {adding && (
+        <AddProfileDialog
+          profiles={profiles}
+          onClose={() => {
+            setAdding(false)
+            moreButton.current?.focus()
+          }}
+          onAdd={(profile) => {
+            setAdding(false)
+            moreButton.current?.focus()
+            onAdd(profile)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
 export default function App() {
   const [active, setActive] = useState("Metadata")
+  const [profiles, setProfiles] = useState(seedProfiles)
+  const [profileId, setProfileId] = useState(seedProfiles[0].id)
   const [toast, setToast] = useState("")
   const [language, setLanguage] = useState("English")
   const [localeMenu, setLocaleMenu] = useState(false)
@@ -6754,6 +7199,8 @@ export default function App() {
     setToast(message)
     window.setTimeout(() => setToast(""), 2400)
   }
+  const currentProfile =
+    profiles.find((item) => item.id === profileId) ?? profiles[0]
 
   return (
     <div className="stage">
@@ -6771,8 +7218,11 @@ export default function App() {
               <Icon name="store" size={16} />
             </span>
             <span>
-              <strong>Acme Studio</strong>
-              <small>8 apps</small>
+              <strong>{currentProfile.team}</strong>
+              <small>
+                {currentProfile.apps}{" "}
+                {currentProfile.apps === 1 ? "app" : "apps"}
+              </small>
             </span>
             <Icon name="chevron" size={14} />
           </button>
@@ -6800,18 +7250,21 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <div className="profile">
-            <div className="profile-avatar">AL</div>
-            <div>
-              <strong>Alex Lin</strong>
-              <span>
-                <i /> API connected
-              </span>
-            </div>
-            <button>
-              <Icon name="more" />
-            </button>
-          </div>
+          <ProfileSwitcher
+            profiles={profiles}
+            activeId={currentProfile.id}
+            onSwitch={(id) => {
+              setProfileId(id)
+              notify(
+                `Switched to ${profiles.find((item) => item.id === id)?.name}`,
+              )
+            }}
+            onAdd={(profile) => {
+              setProfiles([...profiles, profile])
+              setProfileId(profile.id)
+              notify(`Added ${profile.name} and switched to it`)
+            }}
+          />
         </aside>
 
         <main>
