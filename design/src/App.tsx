@@ -208,10 +208,37 @@ const navigation = [
 ] as const
 
 const languages = [
-  ["English", "United States", "100%"],
-  ["Simplified Chinese", "Mainland China", "100%"],
-  ["Japanese", "Japan", "82%"],
-  ["Traditional Chinese", "Taiwan", "100%"],
+  ["English", "United States", "100%", "EN"],
+  ["Simplified Chinese", "Mainland China", "100%", "ZH"],
+  ["Japanese", "Japan", "82%", "JP"],
+  ["Traditional Chinese", "Taiwan", "100%", "ZH-TW"],
+  ["French", "France", "100%", "FR"],
+  ["German", "Germany", "94%", "DE"],
+  ["Spanish", "Spain", "88%", "ES"],
+  ["Italian", "Italy", "76%", "IT"],
+  ["Korean", "South Korea", "100%", "KO"],
+  ["Portuguese", "Brazil", "64%", "PT-BR"],
+  ["Dutch", "Netherlands", "52%", "NL"],
+  ["Russian", "Russia", "41%", "RU"],
+]
+
+type DesignApp = { id: string; name: string; bundleId: string; iconUrl?: string }
+
+function appIcon(color: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="${color}"/><path d="M60 22c6 18 26 26 26 50a26 26 0 0 1-52 0c0-12 7-19 12-27 2 8 6 11 10 13 3-11 1-24 4-36z" fill="#fff"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+// One app has no icon and one has a long title, so both menu states stay visible.
+const seedApps: DesignApp[] = [
+  { id: "fire", name: "Fire", bundleId: "com.acme.fire", iconUrl: appIcon("#e75022") },
+  { id: "harbor", name: "Harbor: Tide Tables & Marine Forecasts", bundleId: "com.acme.harbor.tides", iconUrl: appIcon("#2f6f9f") },
+  { id: "pocket", name: "Pocket Budget", bundleId: "com.acme.pocketbudget", iconUrl: appIcon("#3a8f62") },
+  { id: "lumen", name: "Lumen", bundleId: "com.acme.lumen" },
+  { id: "notes", name: "Field Notes", bundleId: "com.acme.fieldnotes", iconUrl: appIcon("#8a5cc2") },
+  { id: "tempo", name: "Tempo Trainer", bundleId: "com.acme.tempo", iconUrl: appIcon("#c7892b") },
+  { id: "atlas", name: "Atlas Maps", bundleId: "com.acme.atlas", iconUrl: appIcon("#27808a") },
+  { id: "orbit", name: "Orbit", bundleId: "com.acme.orbit", iconUrl: appIcon("#b5476b") },
 ]
 
 function MetadataPage({ notify }: { notify: (message: string) => void }) {
@@ -7285,6 +7312,8 @@ const shellText: Record<Exclude<UiLanguage, "en">, Record<string, string>> = {
     "Individual key": "个人密钥",
     app: "个 App",
     apps: "个 App",
+    "Choose an app": "选择 App",
+    "Resize sidebar": "调整侧边栏宽度",
   },
   "zh-Hant": {
     "App Store Manager": "App Store 管理器",
@@ -7307,6 +7336,8 @@ const shellText: Record<Exclude<UiLanguage, "en">, Record<string, string>> = {
     "Individual key": "個人金鑰",
     app: "個 App",
     apps: "個 App",
+    "Choose an app": "選擇 App",
+    "Resize sidebar": "調整側邊欄寬度",
   },
   ja: {
     "App Store Manager": "App Store マネージャー",
@@ -7329,6 +7360,8 @@ const shellText: Record<Exclude<UiLanguage, "en">, Record<string, string>> = {
     "Individual key": "個人キー",
     app: "個のアプリ",
     apps: "個のアプリ",
+    "Choose an app": "Appを選択",
+    "Resize sidebar": "サイドバーの幅を変更",
   },
 }
 
@@ -7347,6 +7380,177 @@ function moveMenuFocus(menu: HTMLElement | null, step: number) {
   const items = [...(menu?.querySelectorAll<HTMLElement>("button") ?? [])]
   const index = items.indexOf(document.activeElement as HTMLElement)
   items[(index + step + items.length) % items.length]?.focus()
+}
+
+const sidebarWidthKey = "fire.sidebarWidth"
+const sidebarWidths = { initial: 224, min: 200, max: 400, step: 16 }
+
+function savedSidebarWidth() {
+  try {
+    const saved = Number(window.localStorage.getItem(sidebarWidthKey))
+    return saved >= sidebarWidths.min && saved <= sidebarWidths.max
+      ? saved
+      : sidebarWidths.initial
+  } catch {
+    return sidebarWidths.initial
+  }
+}
+
+function SidebarResizer({
+  width,
+  onChange,
+  t,
+}: {
+  width: number
+  onChange: (width: number) => void
+  t: Translate
+}) {
+  // The sidebar never takes more than 40% of the window; index.css applies the same limit.
+  const resize = (next: number) =>
+    onChange(
+      Math.round(
+        Math.max(
+          sidebarWidths.min,
+          Math.min(sidebarWidths.max, window.innerWidth * 0.4, next),
+        ),
+      ),
+    )
+  return (
+    <div
+      className="sidebar-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("Resize sidebar")}
+      aria-valuemin={sidebarWidths.min}
+      aria-valuemax={sidebarWidths.max}
+      aria-valuenow={width}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        if (event.button === 0)
+          event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          resize(
+            event.clientX -
+              event.currentTarget.parentElement!.getBoundingClientRect().left,
+          )
+      }}
+      onDoubleClick={() => onChange(sidebarWidths.initial)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") resize(width - sidebarWidths.step)
+        if (event.key === "ArrowRight") resize(width + sidebarWidths.step)
+      }}
+    />
+  )
+}
+
+// The app's icon, or the fallback while there is none or it fails to load.
+function AppMark({ app, fallback }: { app?: DesignApp; fallback?: ReactNode }) {
+  const [failed, setFailed] = useState<string>()
+  if (app?.iconUrl && app.iconUrl !== failed)
+    return (
+      <img
+        className="app-mark"
+        src={app.iconUrl}
+        alt=""
+        onError={() => setFailed(app.iconUrl)}
+      />
+    )
+  return fallback ?? app?.name.charAt(0)
+}
+
+function AppSwitcher({
+  apps,
+  notify,
+  t,
+}: {
+  apps: DesignApp[]
+  notify: (message: string) => void
+  t: Translate
+}) {
+  const [open, setOpen] = useState(false)
+  const [appId, setAppId] = useState(seedApps[0].id)
+  const root = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const current = apps.find((item) => item.id === appId) ?? apps[0]
+  const count = `${apps.length} ${t(apps.length === 1 ? "app" : "apps")}`
+
+  useEffect(() => {
+    if (!open) return
+    const items = menu.current
+    ;(
+      items?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      items?.querySelector<HTMLElement>("button")
+    )?.focus()
+    const dismiss = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [open])
+
+  return (
+    <div className="app-switch-area" ref={root}>
+      <button
+        className="account-switch"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={!apps.length}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="account-icon">
+          <AppMark app={current} fallback={<Icon name="store" size={16} />} />
+        </span>
+        <span>
+          <strong>{current?.name ?? t("Choose an app")}</strong>
+          <small>{current ? current.bundleId : count}</small>
+        </span>
+        <Icon name="chevron" size={14} />
+      </button>
+      {open && (
+        <div
+          ref={menu}
+          className="profile-menu app-menu"
+          role="menu"
+          aria-label="Apps"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setOpen(false)
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault()
+              moveMenuFocus(menu.current, event.key === "ArrowDown" ? 1 : -1)
+            }
+          }}
+        >
+          <p>{count}</p>
+          <div className="profile-menu-list">
+            {apps.map((item) => (
+              <button
+                key={item.id}
+                role="menuitemradio"
+                aria-checked={item.id === current?.id}
+                className={item.id === current?.id ? "selected" : ""}
+                onClick={() => {
+                  setOpen(false)
+                  setAppId(item.id)
+                  notify(`Switched to ${item.name}`)
+                }}
+              >
+                <i className="profile-menu-avatar app-avatar">
+                  <AppMark app={item} />
+                </i>
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>{item.bundleId}</small>
+                </span>
+                {item.id === current?.id && <Icon name="check" size={15} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Renders as direct children of the nav so the row keeps the nav item styling
@@ -7599,6 +7803,7 @@ export default function App() {
   const [localeMenu, setLocaleMenu] = useState(false)
   const [build, setBuild] = useState("1.0.1")
   const [buildMenu, setBuildMenu] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(savedSidebarWidth)
   const notify = (message: string) => {
     setToast(message)
     window.setTimeout(() => setToast(""), 2400)
@@ -7617,10 +7822,28 @@ export default function App() {
     }
   }, [uiLanguage])
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(sidebarWidthKey, String(sidebarWidth))
+    } catch {
+      // The width is a convenience only.
+    }
+  }, [sidebarWidth])
+
+  useEffect(() => {
+    if (localeMenu)
+      document
+        .querySelector(".metadata-locale-menu .selected")
+        ?.scrollIntoView({ block: "nearest" })
+  }, [localeMenu])
+
   return (
     <div className="stage">
       <div className="app-window">
-        <aside className="sidebar">
+        <aside
+          className="sidebar"
+          style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+        >
           <div className="brand">
             <div className="brand-symbol">F</div>
             <div>
@@ -7628,19 +7851,11 @@ export default function App() {
               <span>{t("App Store Manager")}</span>
             </div>
           </div>
-          <button className="account-switch">
-            <span className="account-icon">
-              <Icon name="store" size={16} />
-            </span>
-            <span>
-              <strong>{currentProfile.team}</strong>
-              <small>
-                {currentProfile.apps}{" "}
-                {t(currentProfile.apps === 1 ? "app" : "apps")}
-              </small>
-            </span>
-            <Icon name="chevron" size={14} />
-          </button>
+          <AppSwitcher
+            apps={seedApps.slice(0, currentProfile.apps)}
+            notify={notify}
+            t={t}
+          />
           <nav>
             <p>{t("Workspace")}</p>
             {navigation.slice(0, 6).map(([label, icon]) => (
@@ -7686,6 +7901,11 @@ export default function App() {
               setProfileId(profile.id)
               notify(`Added ${profile.name} and switched to it`)
             }}
+          />
+          <SidebarResizer
+            width={sidebarWidth}
+            onChange={setSidebarWidth}
+            t={t}
           />
         </aside>
 
@@ -7748,24 +7968,18 @@ export default function App() {
                             onClick={() => setLocaleMenu(!localeMenu)}
                           >
                             <span className="locale-symbol">
-                              {language === "Simplified Chinese"
-                                ? "ZH"
-                                : language === "English"
-                                  ? "EN"
-                                  : language === "Japanese"
-                                    ? "JP"
-                                    : "ZH-TW"}
+                              {languages.find(([title]) => title === language)?.[3]}
                             </span>
                             {language}
                             <Icon name="chevron" size={13} />
                           </button>
                           {localeMenu && (
-                            <div className="locale-menu">
+                            <div className="locale-menu metadata-locale-menu">
                               <div className="locale-menu-head">
                                 <strong>Localization</strong>
-                                <span>4 regions</span>
+                                <span>{languages.length} languages</span>
                               </div>
-                              {languages.map(([title, region, progress]) => (
+                              {languages.map(([title, region, progress, code]) => (
                                 <button
                                   key={title}
                                   className={
@@ -7777,15 +7991,7 @@ export default function App() {
                                     notify(`Switched to ${title}`)
                                   }}
                                 >
-                                  <span className="locale-symbol">
-                                    {title === "Simplified Chinese"
-                                      ? "ZH"
-                                      : title === "English"
-                                        ? "EN"
-                                        : title === "Japanese"
-                                          ? "JP"
-                                          : "ZH-TW"}
-                                  </span>
+                                  <span className="locale-symbol">{code}</span>
                                   <span>
                                     <strong>{title}</strong>
                                     <small>{region}</small>
