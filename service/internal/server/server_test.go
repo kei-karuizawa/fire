@@ -160,3 +160,20 @@ func TestUnknownFieldsAreRejected(t *testing.T) {
 		t.Fatalf("got %d", status)
 	}
 }
+
+func TestAppIconsSkipBuildsWithoutOne(t *testing.T) {
+	server := newTestServer(t, true)
+	status, body := call(t, server, "GET", "/api/v1/apps/icons", "", nil)
+	if status != 200 {
+		t.Fatalf("icons: %d %v", status, body)
+	}
+	icons := body["icons"].(map[string]any)
+	// Ember's newest build is still processing, so its icon comes from the one before.
+	if icon, _ := icons["6447102938"].(string); !strings.HasPrefix(icon, "data:image/svg+xml") {
+		t.Fatalf("ember icon: %q", icon)
+	}
+	// Flint has no builds, so it has no icon.
+	if _, ok := icons["6451873320"]; ok {
+		t.Fatalf("flint has an icon: %v", icons)
+	}
+}

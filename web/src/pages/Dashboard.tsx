@@ -1,3 +1,4 @@
+import AppMark from "../components/AppMark"
 import Icon from "../components/Icon"
 import { CardHeading, Empty, ExternalButton, LoadState, PageHeading, ascLink } from "../components/ui"
 import { useI18n } from "../i18n"
@@ -34,7 +35,9 @@ export default function Dashboard({ app }: { app: App }) {
         <>
           <section className="summary-grid">
             <div className="app-summary">
-              <div className="fire-app-icon">{app.name.charAt(0)}</div>
+              <div className="fire-app-icon">
+                <AppMark app={app} />
+              </div>
               <div className="app-title">
                 <span>{t("dashboard.app")}</span>
                 <h2>{app.name}</h2>

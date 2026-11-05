@@ -96,6 +96,9 @@ func (s *Server) seed() {
 			"minOsVersion": map[string]string{"IOS": "17.0", "MAC_OS": "14.0"}[b.platform], "processingState": b.processing,
 			"usesNonExemptEncryption": false,
 		}})
+		if b.processing != "PROCESSING" {
+			res.Attrs["iconAssetToken"] = map[string]any{"templateUrl": appIconSVG(), "width": 1024, "height": 1024}
+		}
 		detail := s.put(&resource{Type: "buildBetaDetails", ID: res.ID, Attrs: map[string]any{"internalBuildState": b.internal, "externalBuildState": b.external}})
 		s.one(res, "preReleaseVersion", pre)
 		s.one(res, "buildBetaDetail", detail)
@@ -345,5 +348,11 @@ func screenshotSVG(title string, index int) string {
 		`<text x="129" y="96" font-family="-apple-system,Helvetica,sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#622f1f">%s</text>`+
 		`<rect x="39" y="150" width="180" height="26" rx="8" fill="#fff" opacity=".6"/><rect x="39" y="190" width="180" height="26" rx="8" fill="#fff" opacity=".6"/>`+
 		`<rect x="39" y="230" width="120" height="26" rx="8" fill="#fff" opacity=".6"/></svg>`, colors[0], colors[1], title)
+	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
+}
+
+func appIconSVG() string {
+	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#e75022"/>` +
+		`<path d="M60 22c6 18 26 26 26 50a26 26 0 0 1-52 0c0-12 7-19 12-27 2 8 6 11 10 13 3-11 1-24 4-36z" fill="#fff"/></svg>`
 	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(svg))
 }

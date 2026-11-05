@@ -284,6 +284,7 @@ export const ja: Messages = {
   "nav.metadata": "メタデータ",
   "nav.purchases": "App内課金",
   "nav.review": "App審査",
+  "nav.resizeSidebar": "サイドバーの幅を変更",
   "nav.settings": "設定",
   "nav.team": "ユーザとアクセス",
   "nav.workspace": "ワークスペース",

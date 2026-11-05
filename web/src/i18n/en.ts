@@ -287,6 +287,7 @@ export const en = {
   "nav.metadata": "Metadata",
   "nav.purchases": "In-app purchases",
   "nav.review": "App Review",
+  "nav.resizeSidebar": "Resize sidebar",
   "nav.settings": "Settings",
   "nav.team": "Users and access",
   "nav.workspace": "Workspace",

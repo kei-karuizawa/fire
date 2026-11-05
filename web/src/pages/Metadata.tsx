@@ -90,6 +90,10 @@ export default function Metadata({ app }: { app: App }) {
     return () => document.removeEventListener("pointerdown", dismiss)
   }, [versionMenu, localeMenu])
 
+  useEffect(() => {
+    if (localeMenu) document.querySelector(".metadata-locale-menu .selected")?.scrollIntoView({ block: "nearest" })
+  }, [localeMenu])
+
   if (!data) {
     return (
       <div className="review-workspace">
@@ -274,7 +278,7 @@ export default function Metadata({ app }: { app: App }) {
                   <Icon name="chevron" size={13} />
                 </button>
                 {localeMenu && (
-                  <div className="locale-menu" role="menu">
+                  <div className="locale-menu metadata-locale-menu" role="menu">
                     <div className="locale-menu-head">
                       <strong>{t("metadata.localization")}</strong>
                       <span>{t("metadata.languages", { count: locales.length })}</span>

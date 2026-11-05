@@ -15,6 +15,8 @@ import (
 // Service performs App Store Connect calls on behalf of one request's token.
 type Service struct {
 	Client *asc.Client
+
+	icons sync.Map // app ID to cachedIcon
 }
 
 // Call is the token-bound view of the service used by one HTTP request.

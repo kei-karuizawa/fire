@@ -1,6 +1,6 @@
 // Documents returned by Fire's backend (see service/api/openapi.yaml).
 
-export type App = { id: string; name: string; bundleId: string; sku: string; primaryLocale: string }
+export type App = { id: string; name: string; bundleId: string; sku: string; primaryLocale: string; iconUrl?: string }
 
 export type Version = {
   id: string

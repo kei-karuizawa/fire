@@ -5,6 +5,7 @@ import { navigate, type Section } from "../lib/router"
 import { useSession } from "../lib/session"
 import type { App } from "../lib/types"
 import AddProfileDialog from "./AddProfileDialog"
+import AppMark from "./AppMark"
 import Icon, { type IconName } from "./Icon"
 import { ProfileGlyphMark } from "./ProfileGlyphMark"
 import { Confirm, useToast } from "./ui"
@@ -17,6 +18,47 @@ const workspace: [Section, MessageKey, IconName][] = [
   ["purchases", "nav.purchases", "tag"],
   ["analytics", "nav.analytics", "chart"],
 ]
+
+const sidebarWidthKey = "fire.sidebarWidth"
+const sidebarWidths = { initial: 224, min: 200, max: 400, step: 16 }
+
+function readSidebarWidth() {
+  try {
+    const saved = Number(window.localStorage.getItem(sidebarWidthKey))
+    return saved >= sidebarWidths.min && saved <= sidebarWidths.max ? saved : sidebarWidths.initial
+  } catch {
+    return sidebarWidths.initial
+  }
+}
+
+function SidebarResizer({ width, onChange }: { width: number; onChange: (width: number) => void }) {
+  const { t } = useI18n()
+  // The sidebar never takes more than 40% of the window; fire.css applies the same limit.
+  const resize = (next: number) => onChange(Math.round(Math.max(sidebarWidths.min, Math.min(sidebarWidths.max, window.innerWidth * 0.4, next))))
+  return (
+    <div
+      className="sidebar-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("nav.resizeSidebar")}
+      aria-valuemin={sidebarWidths.min}
+      aria-valuemax={sidebarWidths.max}
+      aria-valuenow={width}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        if (event.button === 0) event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(event.clientX - event.currentTarget.parentElement!.getBoundingClientRect().left)
+      }}
+      onDoubleClick={() => onChange(sidebarWidths.initial)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") resize(width - sidebarWidths.step)
+        if (event.key === "ArrowRight") resize(width + sidebarWidths.step)
+      }}
+    />
+  )
+}
 
 function moveMenuFocus(menu: HTMLElement | null, step: number) {
   const items = [...(menu?.querySelectorAll<HTMLElement>("button") ?? [])]
@@ -56,13 +98,15 @@ function AppSwitcher({ apps, appId, section, loading }: { apps: App[] | undefine
   const current = apps?.find((item) => item.id === appId)
   useDismiss(open, root, () => setOpen(false))
   useEffect(() => {
-    if (open) menu.current?.querySelector<HTMLElement>('[aria-checked="true"], button')?.focus()
+    if (!open) return
+    const items = menu.current
+    ;(items?.querySelector<HTMLElement>('[aria-checked="true"]') ?? items?.querySelector<HTMLElement>("button"))?.focus()
   }, [open])
   return (
     <div className="app-switch-area" ref={root}>
       <button className="account-switch" aria-haspopup="menu" aria-expanded={open} disabled={!apps?.length} onClick={() => setOpen(!open)}>
         <span className="account-icon">
-          <Icon name="store" size={16} />
+          <AppMark app={current} fallback={<Icon name="store" size={16} />} />
         </span>
         <span>
           <strong>{current?.name ?? (loading ? t("state.loading") : t("apps.choose"))}</strong>
@@ -97,7 +141,9 @@ function AppSwitcher({ apps, appId, section, loading }: { apps: App[] | undefine
                   navigate(`/apps/${item.id}/${section === "team" ? "dashboard" : section}`)
                 }}
               >
-                <i className="profile-menu-avatar app-avatar">{item.name.charAt(0)}</i>
+                <i className="profile-menu-avatar app-avatar">
+                  <AppMark app={item} />
+                </i>
                 <span>
                   <strong>{item.name}</strong>
                   <small>{item.bundleId}</small>
@@ -341,8 +387,16 @@ export default function Sidebar({ apps, appsLoading, appsError, appId, section }
     else if (appId) navigate(`/apps/${appId}/${target}`)
   }
   const status = appsError ? "error" : apps ? "ok" : "checking"
+  const [width, setWidth] = useState(readSidebarWidth)
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(sidebarWidthKey, String(width))
+    } catch {
+      // The width is a convenience only.
+    }
+  }, [width])
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}>
       <Brand />
       <AppSwitcher apps={apps} appId={appId} section={section} loading={appsLoading} />
       <nav>
@@ -362,6 +416,7 @@ export default function Sidebar({ apps, appsLoading, appsError, appId, section }
         <LanguagePicker />
       </nav>
       <ProfileSwitcher status={status} />
+      <SidebarResizer width={width} onChange={setWidth} />
     </aside>
   )
 }

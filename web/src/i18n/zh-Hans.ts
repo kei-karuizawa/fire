@@ -284,6 +284,7 @@ export const zhHans: Messages = {
   "nav.metadata": "元数据",
   "nav.purchases": "App 内购买项目",
   "nav.review": "App 审核",
+  "nav.resizeSidebar": "调整侧边栏宽度",
   "nav.settings": "设置",
   "nav.team": "用户和访问",
   "nav.workspace": "工作区",

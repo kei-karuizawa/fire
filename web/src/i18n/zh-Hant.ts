@@ -284,6 +284,7 @@ export const zhHant: Messages = {
   "nav.metadata": "中繼資料",
   "nav.purchases": "App 內購買項目",
   "nav.review": "App 審查",
+  "nav.resizeSidebar": "調整側邊欄寬度",
   "nav.settings": "設定",
   "nav.team": "使用者與存取權限",
   "nav.workspace": "工作區",

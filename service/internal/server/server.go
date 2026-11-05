@@ -67,6 +67,10 @@ func New(cfg Config) (http.Handler, error) {
 		apps, err := c.Apps(r.Context())
 		return map[string]any{"apps": apps}, err
 	}))
+	mux.HandleFunc("GET /api/v1/apps/icons", s.call(func(r *http.Request, c *fire.Call) (any, error) {
+		icons, err := c.AppIcons(r.Context())
+		return map[string]any{"icons": icons}, err
+	}))
 	mux.HandleFunc("GET /api/v1/apps/{app}/overview", s.call(func(r *http.Request, c *fire.Call) (any, error) {
 		return c.Overview(r.Context(), r.PathValue("app"))
 	}))

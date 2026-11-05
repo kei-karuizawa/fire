@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import AddProfileDialog from "./components/AddProfileDialog"
 import Sidebar, { Brand, LanguageButtons } from "./components/Sidebar"
 import { Empty, LoadState, ToastProvider, useToast } from "./components/ui"
@@ -83,7 +83,9 @@ function Shell() {
   const route = useRoute()
   const { appId, section } = parseRoute(route.path)
   const apps = useApi<{ apps: AppSummary[] }>("/apps")
-  const list = apps.data?.apps
+  // Icons take longer to look up, so the app list doesn't wait for them.
+  const icons = useApi<{ icons: Record<string, string> }>("/apps/icons").data?.icons
+  const list = useMemo(() => apps.data?.apps.map((item) => ({ ...item, iconUrl: icons?.[item.id] })), [apps.data, icons])
   // Pages outside an app, such as Users and access, keep showing the last app used.
   const rememberedId = active ? readPrefs(active.id).appId : undefined
   const app = list?.find((item) => item.id === appId) ?? (section === "team" ? list?.find((item) => item.id === rememberedId) : undefined)
